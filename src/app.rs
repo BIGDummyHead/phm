@@ -47,26 +47,32 @@ impl<'app> App<'app, Closed> {
         })
     }
 
-    pub fn map_closure<'req, Cls, Fut>(r: Cls) -> ArcRequestClosure
-    where
-        Fut: RequestFuture + 'static,
-        Cls: RequestClosure<'req, Fut> + 'static,
-    {
-        Arc::new(move |req: &mut Request, res: &mut Resolution| Box::pin(r(req, res)))
-    }
-
-    pub async fn add_route<'req, 'rte, Cls, Fut>(
+    /// # Add Route
+    /// 
+    /// Attempts to add the route to the router.
+    /// 
+    /// ## Parameters
+    /// 
+    /// `method`: The http method that is required.
+    /// `route`: The full route to access the endpoint.
+    /// `middleware`: A collection of `ArcMiddlewareClosure`, can be empty if none.
+    /// `req_fn`: A closure that returns a future that falls under the `Fut` constraints.
+    /// 
+    /// ## Example
+    /// ```rs
+    /// 
+    /// ```
+    pub async fn add_route<Cls, Fut>(
         &mut self,
         method: HttpMethod,
-        route: &'rte str,
+        route: &'static str,
         middleware: Vec<ArcMiddlewareClosure>,
         req_fn: Cls
     ) -> Result<(), RouterError>
     where 
-    'rte : 'static,
     Fut : RequestFuture + 'static,
-    Cls : RequestClosure<'req, Fut> + 'static {
-        let req_fn: ArcRequestClosure = Self::map_closure(req_fn);
+    Cls : RequestClosure<Fut> + 'static {
+        let req_fn: ArcRequestClosure = Arc::new(move |req: &mut Request, res: &mut Resolution| Box::pin(req_fn(req, res)));
         self.router.add_route(route, method, middleware, req_fn).await
     }
 
