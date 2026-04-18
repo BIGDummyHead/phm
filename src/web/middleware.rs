@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    Request, Resolution,
+    HttpRequest, Resolution,
     web::{ArcMiddlewareClosure, MiddlewareClosure, MiddlewareFuture},
 };
 
@@ -25,5 +25,5 @@ where
     Fut: MiddlewareFuture + 'static,
     Cls: MiddlewareClosure<Fut> + 'static,
 {
-    Arc::new(move |req: &mut Request, res: &mut Resolution| Box::pin(m(req, res)))
+    Arc::new(move |req: &mut HttpRequest, res: &mut Resolution| Box::pin(m(req, res)))
 }
