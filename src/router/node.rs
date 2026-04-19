@@ -69,10 +69,10 @@ impl<'app> Node<'app> {
         match child_node {
             Some(child_map) => {
                 if let Some(v) = child_map.get(&method) {
-                    let mut node_lock = v.write().await;
+                    let node_read = v.read().await;
 
                     // do not overwrite if there is already a request fn on there!
-                    if let Some(_) = node_lock.request_fn() {
+                    if let Some(_) = node_read.request_fn() {
                         return Err(RouterError::AlreadyExist);
                     }
                 }

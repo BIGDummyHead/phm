@@ -1,4 +1,4 @@
-use std::{collections::HashMap, string::ParseError, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use tokio::{
@@ -11,11 +11,18 @@ use crate::{
     web::http_request::{HttpRequestMeta, HttpRequestMetaParser, http_parse_error::HttpParseError},
 };
 
+pub type HeaderMap = HashMap<String, String>;
+
 // responsible for parsing http1 request.
 #[derive(Default)]
 pub struct HttpParserV1;
 
-fn parse_route_meta<'req>(data: &'req String) -> Result<(&'req str, HttpMethod), HttpParseError> {
+async fn parse_route_meta<'req>(
+    buf_stream: &mut BufReader<&mut TcpStream>,
+) -> Result<(String, HttpMethod), HttpParseError> {
+    let mut data = String::new();
+    buf_stream.read_line(&mut data).await?;
+
     let mut spl = data.split(' ');
 
     let method = spl
@@ -39,21 +46,18 @@ fn parse_route_meta<'req>(data: &'req String) -> Result<(&'req str, HttpMethod),
 
     let route = spl.next().ok_or(HttpParseError::MissingRequiredMeta)?;
 
-    Ok((route, method))
+    Ok((route.to_string(), method))
 }
 
-async fn create_header_map<'req>(
-    buf_stream: &'req mut BufReader<&'req mut TcpStream>,
-) -> Result<HashMap<String, String>, HttpParseError> {
+async fn create_header_map(
+    buf_stream: &mut BufReader<&mut TcpStream>,
+) -> Result<HeaderMap, HttpParseError> {
     let mut map = HashMap::new();
 
     // read until an empty line is encoutered, notating that there is a body to be read
     loop {
         let mut buf = String::new();
-        buf_stream
-            .read_line(&mut buf)
-            .await
-            .map_err(HttpParseError::IO)?;
+        buf_stream.read_line(&mut buf).await?;
 
         // ready to read that body 😘😘😘 <- this shit is funny
         if buf.is_empty() {
@@ -73,23 +77,20 @@ async fn create_header_map<'req>(
     Ok(map)
 }
 
-async fn read_body<'req>(
-    buf_stream: &'req mut BufReader<&'req mut TcpStream>,
-    headers: &HashMap<&str, &str>,
+async fn read_body(
+    buf_stream: &mut BufReader<&mut TcpStream>,
+    headers: &HeaderMap,
 ) -> Result<Arc<[u8]>, HttpParseError> {
     let content_length = headers
         .get("content-length")
-        .map(|s| str::parse::<usize>(*s).map_err(|_| HttpParseError::InvalidContentLength))
+        .map(|s| str::parse::<usize>(&*s).map_err(|_| HttpParseError::InvalidContentLength))
         .transpose()?;
 
     //there is a fixed body to read 🤤🍴
     if let Some(content_length) = content_length {
         let mut buf = vec![0u8; content_length];
 
-        buf_stream
-            .read_exact(&mut buf)
-            .await
-            .map_err(HttpParseError::IO)?;
+        buf_stream.read_exact(&mut buf).await?;
 
         let arc_buf: Arc<[u8]> = buf.into();
 
@@ -104,10 +105,31 @@ async fn read_body<'req>(
         }
 
         // chunked, assume only supported currently
+        let mut data: Vec<u8> = Vec::new();
         loop {
             let mut buf_size = String::new();
-            buf_stream.read_line(&mut buf_size);
+            buf_stream.read_line(&mut buf_size).await?;
+
+            if buf_size.is_empty() {
+                return Err(HttpParseError::InvalidBufferSize);
+            }
+
+            let buf_size = buf_size
+                .parse::<usize>()
+                .map_err(|_| HttpParseError::InvalidBufferSize)?;
+
+            // read the line no matter if the buffer size is 0
+            let mut content = String::new();
+            buf_stream.read_line(&mut content).await?;
+
+            if buf_size == 0 {
+                break;
+            }
+
+            data.extend(content.as_bytes());
         }
+
+        return Ok(data.into());
     }
 
     // we can configure other things here like Transfer chunk encoding...
@@ -120,16 +142,16 @@ impl HttpRequestMetaParser for HttpParserV1 {
     async fn parse<'req>(stream: &'req mut TcpStream) -> Result<HttpRequestMeta, HttpParseError> {
         let mut buffer = BufReader::new(stream);
 
-        let mut req_info_meta = String::new();
-        buffer
-            .read_line(&mut req_info_meta)
-            .await
-            .map_err(HttpParseError::IO)?;
+        let (route, method) = parse_route_meta(&mut buffer).await?;
 
-        let (route, method) = parse_route_meta(&req_info_meta)?;
+        let headers = create_header_map(&mut buffer).await?;
 
-        loop {}
+        let body = if !matches!(method, HttpMethod::GET) {
+            read_body(&mut buffer, &headers).await?
+        } else {
+            Arc::new([0u8; 0])
+        };
 
-        todo!()
+        Ok(HttpRequestMeta::new(route, method, headers, body))
     }
 }
