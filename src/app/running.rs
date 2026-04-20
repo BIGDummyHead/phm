@@ -1,12 +1,17 @@
-use std::pin::Pin;
+use std::{pin::Pin, sync::Arc};
 
-use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
+use tokio::{
+    net::TcpListener,
+    sync::{RwLock, watch},
+    task::JoinHandle,
+};
 
-use crate::{App, app::Closed};
+use crate::{App, HttpRequest, app::Closed, router::Router, web::http_request::Parsers};
 
 pub struct Running {
     background_task: JoinHandle<()>,
     poison: Pin<Box<dyn Future<Output = ()>>>,
+    http_parser: Parsers,
 }
 
 impl<'app> App<'app, Running> {
@@ -14,6 +19,10 @@ impl<'app> App<'app, Running> {
     ///
     /// Creates a new running app that will handle all incoming connections until its timely death.
     pub fn running(closed: App<'app, Closed>) -> App<'app, Running> {
+
+        let http_parser = closed.state.http_parser.unwrap_or(Parsers::default());
+        let router = Arc::new(closed.router);
+
         //create a sender and receiver for our poison and interception.
         let (sender, mut receiver) = watch::channel(false);
 
@@ -35,7 +44,7 @@ impl<'app> App<'app, Running> {
                 // either select to handle the connection
                 // or a poison which will end this loop.
                 tokio::select! {
-                    _ = handle_connection(listener) => {
+                    _ = handle_connection(listener, &closed.router, &http_parser) => {
 
                     }
                     _ = receiver.changed() => {
@@ -50,10 +59,11 @@ impl<'app> App<'app, Running> {
 
         Self {
             client: closed.client,
-            router: closed.router,
+            router,
             state: Running {
                 background_task,
                 poison,
+                http_parser: Parsers::HttpV1,
             },
         }
     }
@@ -75,10 +85,16 @@ impl<'app> App<'app, Running> {
     }
 }
 
-async fn handle_connection(listener: &TcpListener) -> std::io::Result<()>
-{
+
+/// Resonsible for accepting a Tcp Stream from an incoming request.
+/// 
+/// Then allows the workers to parse into an HttpRequest
+async fn handle_connection<'app>(listener: &TcpListener, router: &'app Router<'app>, parser: &'app Parsers) -> std::io::Result<()> {
     let (stream, socket) = listener.accept().await?;
 
+    let stream = Arc::new(RwLock::new(stream));
+
+    let req_future = HttpRequest::parse(parser, router, stream, socket).await;
 
     Ok(())
 }

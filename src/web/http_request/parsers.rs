@@ -3,8 +3,10 @@ use tokio::net::TcpStream;
 use crate::web::http_request::{HttpRequestMeta, HttpRequestMetaParser, http_parse_error::HttpParseError, http_parser_v1::HttpParserV1};
 
 /// HTTP Protocol Parsers
+#[derive(Default)]
 pub enum Parsers {
 
+    #[default]
     HttpV1
 }
 

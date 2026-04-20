@@ -5,9 +5,9 @@ use thiserror::Error;
 /// # Variables
 ///
 /// Variables stored in the request.
-pub struct Variables<'req> {
+pub struct Variables {
     // should come from the slice of the request.
-    route: HashMap<&'req str, &'req str>,
+    route: HashMap<String, String>,
     // dynamically dispatched from the user, needs to be downcasted.
     trace_line: HashMap<String, Box<dyn Any>>,
 }
@@ -20,7 +20,15 @@ pub enum VariableError {
     CannotConvert(String, String),
 }
 
-impl<'req> Variables<'req> {
+impl Variables {
+
+    pub fn new(route_vars: HashMap<String, String>) -> Self {
+        Self {
+            trace_line: HashMap::new(),
+            route: route_vars
+        }
+    }
+
     /// # Get Route Variable
     ///
     /// Attempts to get a variable from the route parameters.
@@ -34,7 +42,7 @@ impl<'req> Variables<'req> {
     {
         let route_var = self.route.get(item).ok_or(VariableError::Missing)?;
 
-        T::from_str(*route_var).map_err(|_| {
+        T::from_str(route_var).map_err(|_| {
             VariableError::CannotConvert(item.to_string(), std::any::type_name::<T>().to_string())
         })
     }

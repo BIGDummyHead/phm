@@ -5,6 +5,8 @@ mod web;
 
 mod router;
 
+mod manager;
+
 pub use app::App;
 
 pub use web::{

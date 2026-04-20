@@ -1,14 +1,12 @@
 mod node;
 mod router_error;
-mod route_trace;
 
 use std::{collections::HashMap, sync::Arc};
 
-use node::Node;
 use tokio::sync::RwLock;
 
 pub use router_error::RouterError;
-pub use route_trace::RouteTrace;
+pub use node::Node;
 
 use crate::{
     HttpMethod,
@@ -83,11 +81,10 @@ impl<'app> Router<'app> {
     pub async fn get_route(
         &self,
         full_route: &str,
-        method: HttpMethod
-    ) -> Result<RouteTrace<'app>, RouterError> {
+        method: HttpMethod,
+        variables: &mut HashMap<String, String>
+    ) -> Result<Arc<RwLock<Node<'app>>>, RouterError> {
         let mut current_node = self.head.clone();
-
-        let mut variables = HashMap::new();
 
         let mut route_parts = full_route.split('/');
         while let Some(route_part) = route_parts.next() {
@@ -112,6 +109,6 @@ impl<'app> Router<'app> {
             current_node = child_node;
         }
 
-        Ok(RouteTrace::new(current_node, variables))
+        Ok(current_node)
     }
 }

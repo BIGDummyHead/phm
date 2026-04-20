@@ -1,11 +1,17 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
-use tokio::net::{TcpListener, ToSocketAddrs};
+use tokio::{
+    net::{TcpListener, ToSocketAddrs},
+    sync::RwLock,
+};
 
 use crate::{
     HttpMethod, HttpRequest, Resolution,
     router::{Router, RouterError},
-    web::{ArcMiddlewareClosure, ArcRequestClosure, RequestClosure, RequestFuture},
+    web::{
+        ArcMiddlewareClosure, ArcRequestClosure, RequestClosure, RequestFuture,
+        http_request::Parsers,
+    },
 };
 
 mod module;
@@ -15,12 +21,15 @@ pub use module::Module;
 pub use running::Running;
 
 /// The app state is closed.
-pub struct Closed;
+pub struct Closed<'app> {
+    http_parser: Option<Parsers>,
+    router: Arc<RwLock<Router<'app>>>,
+}
 
 pub struct App<'app, T> {
     client: Arc<TcpListener>,
-    router: Router<'app>,
-    state: T
+    state: T,
+    phant: std::marker::PhantomData<&'app ()>,
 }
 
 macro_rules! add_httpmethod {
@@ -53,7 +62,7 @@ macro_rules! add_httpmethod {
     };
 }
 
-impl<'app> App<'app, Closed> {
+impl<'app> App<'app, Closed<'app>> {
     /// # Bind
     ///
     /// Binds a `TcpListener` to the given `SocketAddrs`.
@@ -67,16 +76,19 @@ impl<'app> App<'app, Closed> {
     /// ## Notes
     ///
     /// It is important to note that the `TcpListener` will not start accepting clients until `start` is called.
-    pub async fn bind<A>(addr: A) -> Result<App<'app, Closed>, std::io::Error>
+    pub async fn bind<A>(addr: A) -> Result<App<'app, Closed<'app>>, std::io::Error>
     where
         A: ToSocketAddrs,
     {
         let bind_result = TcpListener::bind(addr).await?;
 
-        Ok(App::<Closed> {
+        Ok(App {
             client: Arc::new(bind_result),
-            router: Router::new(),
-            state: Closed
+            phant: std::marker::PhantomData,
+            state: Closed {
+                http_parser: None,
+                router: Arc::new(RwLock::new(Router::new())),
+            },
         })
     }
 
@@ -108,7 +120,10 @@ impl<'app> App<'app, Closed> {
     {
         let req_fn: ArcRequestClosure =
             Arc::new(move |req: &mut HttpRequest, res: &mut Resolution| Box::pin(req_fn(req, res)));
-        self.router
+        self.state
+            .router
+            .write()
+            .await
             .add_route(route, method, middleware, req_fn)
             .await
     }
@@ -119,9 +134,9 @@ impl<'app> App<'app, Closed> {
     add_httpmethod!(put, HttpMethod::PUT);
     add_httpmethod!(delete, HttpMethod::DELETE);
 
-    /// Borrows the router that is in use for the app.
-    pub fn get_router(&self) -> &Router<'app> {
-        &self.router
+    /// Set the parser to use for parsing incoming HTTP Request.
+    pub fn set_parser(&mut self, selected: Parsers) -> () {
+        self.state.http_parser = Some(selected);
     }
 
     /// # Module
@@ -142,9 +157,9 @@ impl<'app> App<'app, Closed> {
     }
 
     /// # Start
-    /// 
+    ///
     /// Attempts to start the application.
-    /// 
+    ///
     /// Returns a running instance of the application.
     pub fn start(self) -> App<'app, Running> {
         App::running(self)

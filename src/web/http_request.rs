@@ -1,57 +1,102 @@
 mod http_parse_error;
-mod http_request_meta_parser;
 mod http_parser_v1;
 mod http_request_meta;
+mod http_request_meta_parser;
 mod parsers;
 mod request_error;
 mod variables;
 
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
 pub use http_request_meta::HttpRequestMeta;
+pub use parsers::Parsers;
 pub use request_error::RequestError;
 pub use variables::Variables;
-pub use parsers::Parsers;
 
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::RwLock};
 
 pub use http_request_meta_parser::HttpRequestMetaParser;
 
-use crate::{router::Router, web::http_request::http_parse_error::HttpParseError};
+use crate::{
+    router::{Node, Router},
+    web::http_request::http_parse_error::HttpParseError,
+};
 
 /// request placeholder, holds pertinent information about the ongoign request, things related to the request should
 /// encapsulate the same lifetimes as this object.
-pub struct HttpRequest<'req> {
+pub struct HttpRequest<'app> {
     socket: SocketAddr,
-    stream: TcpStream,
-    params: Variables<'req>,
+    stream: Arc<RwLock<TcpStream>>,
+    variables: Variables,
     meta: HttpRequestMeta,
+    node: Arc<RwLock<Node<'app>>>,
 }
 
-impl<'req> HttpRequest<'req> {
-    pub async fn parse<P>(router: &Router<'_>, mut stream: TcpStream, socket: SocketAddr, parser: Parsers) -> Result<Self, HttpParseError>
-    where
-        P: HttpRequestMetaParser,
+macro_rules! immut_mut_var {
+    ($get_name:ident, $get_mut_name:ident, $field_name:ident, $ty:ty) => {
+        pub fn $get_name(&self) -> &$ty {
+            &self.$field_name
+        }
+
+        pub fn $get_mut_name(&mut self) -> &mut $ty {
+            &mut self.$field_name
+        }
+    };
+}
+
+macro_rules! immut_var {
+    ($get_name:ident, $field_name:ident, $ty:ty) => {
+        pub fn $get_name(&self) -> &$ty {
+            &self.$field_name
+        }
+    };
+}
+
+impl<'app> HttpRequest<'app> {
+
+    /// # Parse
+    /// 
+    /// Parses the TcpStream and creates an HttpRequest.
+    pub async fn parse(
+        parser: &Parsers,
+        router: &Router<'app>,
+        stream: Arc<RwLock<TcpStream>>,
+        socket: SocketAddr,
+    ) -> Result<Self, HttpParseError>
     {
+
         // params are created within the parse.
-        let meta = parser.parse(&mut stream).await?;
+        let meta = {
+            let mut stream_guard = stream.write().await;
+            parser.parse(&mut stream_guard).await?
+        };
 
-        let route = router.get_route(meta.clean_route(), meta.method().clone()).await?;
+        let mut route_variables = HashMap::new();
+        let route = router
+            .get_route(
+                meta.clean_route(),
+                meta.method().clone(),
+                &mut route_variables,
+            )
+            .await?;
 
-        todo!()
+        let vars = Variables::new(route_variables);
+
+        Ok(Self {
+            socket,
+            stream,
+            variables: vars,
+            meta,
+            node: route,
+        })
     }
 
-    /// # Mut Variables
-    ///
-    /// Borrows the variables as Mutatable.
-    pub fn mut_variables(&mut self) -> &mut Variables<'req> {
-        &mut self.params
-    }
+    immut_var!(socket, socket, SocketAddr);
+    immut_var!(stream, stream, Arc<RwLock<TcpStream>>);
+    immut_var!(node, node, Arc<RwLock<Node<'app>>>);
 
-    /// # Variables
-    ///
-    /// Immuatable variables that are stored.
-    pub fn variables(&self) -> &Variables<'req> {
-        &self.params
-    }
+
+    immut_mut_var!(variables, variables_mut, variables, Variables);
+    immut_mut_var!(meta, meta_mut, meta, HttpRequestMeta);
+
 }
