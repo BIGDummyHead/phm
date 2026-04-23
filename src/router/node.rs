@@ -109,10 +109,12 @@ impl<'app> Node<'app> {
         route_part: &str,
         method: &HttpMethod,
     ) -> Option<&Arc<RwLock<Node<'app>>>> {
+
         let exact_child_node = self.children.get(route_part).and_then(|m| m.get(method));
 
         if exact_child_node.is_none() {
             for (_, method_map) in &self.children {
+                
                 // check if the method is available and it is a variable
                 if let Some(n) = method_map.get(method)
                     && n.read().await.is_variable()

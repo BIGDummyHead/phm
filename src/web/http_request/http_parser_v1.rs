@@ -28,7 +28,7 @@ async fn parse_route_meta<'req>(
     let method = spl
         .next()
         .map(|req_method| {
-            let req_method = req_method.to_lowercase();
+            let req_method = req_method.to_uppercase();
             match req_method.as_str() {
                 "POST" => HttpMethod::POST,
                 "PUT" => HttpMethod::PUT,
@@ -59,13 +59,15 @@ async fn create_header_map(
         let mut buf = String::new();
         buf_stream.read_line(&mut buf).await?;
 
+        let trim_buf = buf.trim();
+
         // ready to read that body 😘😘😘 <- this shit is funny
-        if buf.is_empty() {
+        if trim_buf.is_empty() {
             break;
         }
 
         let (header_name, header_value) =
-            buf.split_once(":").ok_or(HttpParseError::InvalidHeader)?;
+            trim_buf.split_once(":").ok_or(HttpParseError::InvalidHeader)?;
 
         // ! insert case insensitive, very important
         map.insert(

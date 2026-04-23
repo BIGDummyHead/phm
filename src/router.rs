@@ -13,10 +13,14 @@ use crate::{
     web::{ArcMiddlewareClosure, ArcRequestClosure},
 };
 
-pub struct Router<'app> {
+pub struct Router<'app>
+where 'app : 'static {
     head: Arc<RwLock<Node<'app>>>,
 }
 
+unsafe impl<'app> Send for Router<'app> {}
+
+unsafe impl<'app> Sync for Router<'app> {}
 impl<'app> Router<'app> {
     pub fn new() -> Self {
         Self {
@@ -98,7 +102,6 @@ impl<'app> Router<'app> {
             if node.is_variable() {
                 variables.insert(node.route().to_string(), route_part.to_string());
             }
-
 
             let child_node = match node.get_child(route_part, &method).await {
                 None => Err(RouterError::NotFound),

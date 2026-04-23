@@ -23,7 +23,7 @@ pub enum Middleware {
 pub fn middleware<'req, Fut, Cls>(m: Cls) -> ArcMiddlewareClosure
 where
     Fut: MiddlewareFuture + 'static,
-    Cls: MiddlewareClosure<Fut> + 'static,
+    Cls: MiddlewareClosure<Fut> + Send + Sync + 'static,
 {
     Arc::new(move |req: &mut HttpRequest, res: &mut Resolution| Box::pin(m(req, res)))
 }

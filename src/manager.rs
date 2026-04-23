@@ -9,22 +9,18 @@ use tokio::sync::{
 
 //pub use worker::Worker;
 
-pub struct Manager<T>
-where
-    T: 'static + Future<Output = ()> + std::marker::Send,
-{
-    sender: Sender<Pin<Box<T>>>,
+pub type SenderData = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+pub struct Manager {
+    sender: Sender<SenderData>,
 }
 
-impl<T> Manager<T>
-where
-    T: 'static + Future<Output = ()> + std::marker::Send,
+impl Manager
 {
     /// # new
     ///
     /// Creates `n` workers to consume incoming work.
     pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel::<Pin<Box<T>>>(1000);
+        let (sender, receiver) = mpsc::channel::<SenderData>(1000);
         let receiver = Arc::new(Mutex::new(receiver));
 
         // create n workers to work
@@ -53,7 +49,7 @@ where
     /// sends work to the workers. 
     /// 
     /// if sending fails, then a send error is returned with the value you tried to send
-    pub async fn send_work(&self, work: Pin<Box<T>>) -> Result<(), SendError<Pin<Box<T>>>> {
+    pub async fn send_work(&self, work: SenderData) -> Result<(), SendError<SenderData>> {
         self.sender.send(work).await
     }
 }

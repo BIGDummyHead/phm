@@ -10,7 +10,8 @@ use crate::{
 /// A module that contains a base route.
 ///
 /// This allows you to create a module like `/api` and then add routes on to the underlying app router.
-pub struct Module<'app> {
+pub struct Module<'app>
+where 'app : 'static {
     base_route: &'app str,
     app: &'app App<'app, Closed>,
 }
@@ -25,7 +26,7 @@ macro_rules! http_module_fn {
         ) -> ()
         where
             Fut: RequestFuture + 'static,
-            Cls: RequestClosure<Fut> + 'static,
+            Cls: RequestClosure<Fut> + Send + Sync + 'static,
         {
             let appended_route = self.clean_route(route.into());
             dbg!(&appended_route);
@@ -71,7 +72,7 @@ impl<'app> Module<'app> {
     ) -> Result<(), RouterError>
     where
         Fut: RequestFuture + 'static,
-        Cls: RequestClosure<Fut> + 'static,
+        Cls: RequestClosure<Fut> + Send + Sync + 'static,
     {
         let appended_route = self.clean_route(route.into());
         dbg!(&appended_route);

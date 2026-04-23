@@ -21,15 +21,15 @@ pub use module::Module;
 pub use running::Running;
 
 /// The app state is closed.
-pub struct Closed<'app> {
+pub struct Closed {
     http_parser: Option<Parsers>,
-    router: Arc<RwLock<Router<'app>>>,
 }
 
-pub struct App<'app, T> {
+pub struct App<'app, T>
+where 'app : 'static {
     client: Arc<TcpListener>,
     state: T,
-    phant: std::marker::PhantomData<&'app ()>,
+    router: Arc<RwLock<Router<'app>>>,
 }
 
 macro_rules! add_httpmethod {
@@ -53,7 +53,7 @@ macro_rules! add_httpmethod {
         ) -> ()
         where
             Fut: RequestFuture + 'static,
-            Cls: RequestClosure<Fut> + 'static,
+            Cls: RequestClosure<Fut> + Send + Sync + 'static,
         {
             Self::add_route(self, $method, route, middleware, req_fn)
                 .await
@@ -62,7 +62,8 @@ macro_rules! add_httpmethod {
     };
 }
 
-impl<'app> App<'app, Closed<'app>> {
+impl<'app> App<'app, Closed>
+where 'app : 'static {
     /// # Bind
     ///
     /// Binds a `TcpListener` to the given `SocketAddrs`.
@@ -76,7 +77,7 @@ impl<'app> App<'app, Closed<'app>> {
     /// ## Notes
     ///
     /// It is important to note that the `TcpListener` will not start accepting clients until `start` is called.
-    pub async fn bind<A>(addr: A) -> Result<App<'app, Closed<'app>>, std::io::Error>
+    pub async fn bind<A>(addr: A) -> Result<App<'app, Closed>, std::io::Error>
     where
         A: ToSocketAddrs,
     {
@@ -84,11 +85,8 @@ impl<'app> App<'app, Closed<'app>> {
 
         Ok(App {
             client: Arc::new(bind_result),
-            phant: std::marker::PhantomData,
-            state: Closed {
-                http_parser: None,
-                router: Arc::new(RwLock::new(Router::new())),
-            },
+            router: Arc::new(RwLock::new(Router::new())),
+            state: Closed { http_parser: None },
         })
     }
 
@@ -116,12 +114,11 @@ impl<'app> App<'app, Closed<'app>> {
     ) -> Result<(), RouterError>
     where
         Fut: RequestFuture + 'static,
-        Cls: RequestClosure<Fut> + 'static,
+        Cls: RequestClosure<Fut> + Send + Sync + 'static,
     {
         let req_fn: ArcRequestClosure =
-            Arc::new(move |req: &mut HttpRequest, res: &mut Resolution| Box::pin(req_fn(req, res)));
-        self.state
-            .router
+            Arc::new(move |req: &'static mut HttpRequest, res: &'static mut Resolution| Box::pin(req_fn(req, res)));
+        self.router
             .write()
             .await
             .add_route(route, method, middleware, req_fn)
@@ -161,7 +158,7 @@ impl<'app> App<'app, Closed<'app>> {
     /// Attempts to start the application.
     ///
     /// Returns a running instance of the application.
-    pub fn start(self) -> App<'app, Running> {
-        App::running(self)
+    pub async fn start(self) -> App<'app, Running> {
+        App::running(self).await
     }
 }

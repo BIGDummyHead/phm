@@ -24,13 +24,17 @@ use crate::{
 
 /// request placeholder, holds pertinent information about the ongoign request, things related to the request should
 /// encapsulate the same lifetimes as this object.
-pub struct HttpRequest<'app> {
+pub struct HttpRequest<'app>
+where 'app : 'static {
     socket: SocketAddr,
     stream: Arc<RwLock<TcpStream>>,
     variables: Variables,
     meta: HttpRequestMeta,
     node: Arc<RwLock<Node<'app>>>,
 }
+
+unsafe impl<'app> Send for HttpRequest<'app> {}
+unsafe impl<'app> Sync for HttpRequest<'app> {}
 
 macro_rules! immut_mut_var {
     ($get_name:ident, $get_mut_name:ident, $field_name:ident, $ty:ty) => {
@@ -52,7 +56,8 @@ macro_rules! immut_var {
     };
 }
 
-impl<'app> HttpRequest<'app> {
+impl<'app> HttpRequest<'app>
+where 'app : 'static {
 
     /// # Parse
     /// 

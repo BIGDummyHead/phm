@@ -1,7 +1,7 @@
 /// # Http Method
 ///
 /// HTTP defines a set of request methods to indicate the purpose of the request and what is expected if the request is successful. Although they can also be nouns, these request methods are sometimes referred to as HTTP verbs. Each request method has its own semantics, but some characteristics are shared across multiple methods, specifically request methods can be safe, idempotent, or cacheable.
-#[derive(Hash, PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum HttpMethod {
     /// The GET method requests a representation of the specified resource. Requests using GET should only retrieve data and should not contain a request content.
     GET,
