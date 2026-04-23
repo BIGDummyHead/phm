@@ -3,10 +3,9 @@ mod router_error;
 
 use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::RwLock;
-
-pub use router_error::RouterError;
 pub use node::Node;
+pub use router_error::RouterError;
+use smol::lock::RwLock;
 
 use crate::{
     HttpMethod,
@@ -14,7 +13,9 @@ use crate::{
 };
 
 pub struct Router<'app>
-where 'app : 'static {
+where
+    'app: 'static,
+{
     head: Arc<RwLock<Node<'app>>>,
 }
 
@@ -39,7 +40,6 @@ impl<'app> Router<'app> {
 
         let mut peek_route = full_route.split('/').peekable();
         while let Some(route_part) = peek_route.next() {
-
             if route_part.is_empty() {
                 continue;
             }
@@ -86,27 +86,34 @@ impl<'app> Router<'app> {
         &self,
         full_route: &str,
         method: HttpMethod,
-        variables: &mut HashMap<String, String>
+        variables: &mut HashMap<String, String>,
     ) -> Result<Arc<RwLock<Node<'app>>>, RouterError> {
         let mut current_node = self.head.clone();
 
         let mut route_parts = full_route.split('/');
         while let Some(route_part) = route_parts.next() {
-
             if route_part.is_empty() {
                 continue;
             }
 
             let node = current_node.read().await;
-
             if node.is_variable() {
                 variables.insert(node.route().to_string(), route_part.to_string());
             }
 
             let child_node = match node.get_child(route_part, &method).await {
-                None => Err(RouterError::NotFound),
-                Some(c) => Ok(c.clone())
+                None => {
+                    Err(RouterError::NotFound)
+                },
+                Some(c) => Ok(c.clone()),
             }?;
+
+            {
+                let c_node = child_node.read().await;
+                if c_node.is_variable() {
+                    variables.insert(c_node.route().chars().skip(1).collect(), route_part.to_string());
+                }
+            }
 
             drop(node);
             current_node = child_node;

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    HttpRequest, Resolution,
+    HttpRequest, Response,
     web::{ArcMiddlewareClosure, MiddlewareClosure, MiddlewareFuture},
 };
 
@@ -22,8 +22,8 @@ pub enum Middleware {
 /// TODO: DOCUMENT
 pub fn middleware<'req, Fut, Cls>(m: Cls) -> ArcMiddlewareClosure
 where
-    Fut: MiddlewareFuture + 'static,
+    Fut: MiddlewareFuture + Send + Sync + 'static,
     Cls: MiddlewareClosure<Fut> + Send + Sync + 'static,
 {
-    Arc::new(move |req: &mut HttpRequest, res: &mut Resolution| Box::pin(m(req, res)))
+    Arc::new(move |req: &mut HttpRequest, res: &mut Response| Box::pin(m(req, res)))
 }

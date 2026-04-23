@@ -1,9 +1,11 @@
 use crate::{
     App, HttpMethod,
-    app::{Closed},
+    app::Closed,
     router::RouterError,
     web::{ArcMiddlewareClosure, RequestClosure, RequestFuture},
 };
+
+use crate::web::RequestBound;
 
 /// # Module
 ///
@@ -11,25 +13,25 @@ use crate::{
 ///
 /// This allows you to create a module like `/api` and then add routes on to the underlying app router.
 pub struct Module<'app>
-where 'app : 'static {
+where
+    'app: 'static,
+{
     base_route: &'app str,
     app: &'app App<'app, Closed>,
 }
 
 macro_rules! http_module_fn {
     ($name:ident, $meth:expr) => {
-        pub async fn $name<Cls, Fut>(
+        pub async fn $name<F>(
             &self,
             route: &'static str,
             middleware: Vec<ArcMiddlewareClosure>,
-            req_fn: Cls,
+            req_fn: F,
         ) -> ()
         where
-            Fut: RequestFuture + 'static,
-            Cls: RequestClosure<Fut> + Send + Sync + 'static,
+            F: for<'a> RequestBound<'a>,
         {
             let appended_route = self.clean_route(route.into());
-            dbg!(&appended_route);
             self.app
                 .add_route($meth, appended_route.leak(), middleware, req_fn)
                 .await
@@ -39,9 +41,8 @@ macro_rules! http_module_fn {
 }
 
 impl<'app> Module<'app> {
-
     /// # New
-    /// 
+    ///
     /// Creates a new module with a reference to the app and a base route to use.
     pub fn new(base_route: &'app str, app: &'app App<'app, Closed>) -> Module<'app> {
         Self { base_route, app }
@@ -59,23 +60,21 @@ impl<'app> Module<'app> {
     }
 
     /// # Add Route
-    /// 
-    /// Works in the same manner as the app add route however, appends your base route to it. 
-    /// 
+    ///
+    /// Works in the same manner as the app add route however, appends your base route to it.
+    ///
     /// To see further documentation ensue the `App.rs`.    
-    pub async fn add_route<Cls, Fut>(
+    pub async fn add_route<F>(
         &self,
         method: HttpMethod,
         route: impl Into<String>,
         middleware: Vec<ArcMiddlewareClosure>,
-        req_fn: Cls,
+        req_fn: F,
     ) -> Result<(), RouterError>
     where
-        Fut: RequestFuture + 'static,
-        Cls: RequestClosure<Fut> + Send + Sync + 'static,
+        F: for<'a> RequestBound<'a>
     {
         let appended_route = self.clean_route(route.into());
-        dbg!(&appended_route);
         self.app
             .add_route(method, appended_route.leak(), middleware, req_fn)
             .await

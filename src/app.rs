@@ -1,15 +1,10 @@
 use std::sync::Arc;
 
-use tokio::{
-    net::{TcpListener, ToSocketAddrs},
-    sync::RwLock,
-};
-
 use crate::{
-    HttpMethod, HttpRequest, Resolution,
+    HttpMethod, HttpRequest, Response,
     router::{Router, RouterError},
     web::{
-        ArcMiddlewareClosure, ArcRequestClosure, RequestClosure, RequestFuture,
+        ArcMiddlewareClosure, ArcRequestClosure, RequestBound, RequestClosure, RequestFuture,
         http_request::Parsers,
     },
 };
@@ -19,6 +14,10 @@ mod running;
 
 pub use module::Module;
 pub use running::Running;
+use smol::{
+    lock::RwLock,
+    net::{AsyncToSocketAddrs, TcpListener},
+};
 
 /// The app state is closed.
 pub struct Closed {
@@ -26,7 +25,9 @@ pub struct Closed {
 }
 
 pub struct App<'app, T>
-where 'app : 'static {
+where
+    'app: 'static,
+{
     client: Arc<TcpListener>,
     state: T,
     router: Arc<RwLock<Router<'app>>>,
@@ -45,15 +46,14 @@ macro_rules! add_httpmethod {
         /// ## Panics
         ///
         /// This function will panic if the route is invalid or already exists.
-        pub async fn $name<Cls, Fut>(
+        pub async fn $name<F>(
             &self,
             route: &'static str,
             middleware: Vec<ArcMiddlewareClosure>,
-            req_fn: Cls,
+            req_fn: F,
         ) -> ()
         where
-            Fut: RequestFuture + 'static,
-            Cls: RequestClosure<Fut> + Send + Sync + 'static,
+            F: for<'a> RequestBound<'a>,
         {
             Self::add_route(self, $method, route, middleware, req_fn)
                 .await
@@ -63,7 +63,9 @@ macro_rules! add_httpmethod {
 }
 
 impl<'app> App<'app, Closed>
-where 'app : 'static {
+where
+    'app: 'static,
+{
     /// # Bind
     ///
     /// Binds a `TcpListener` to the given `SocketAddrs`.
@@ -79,7 +81,7 @@ where 'app : 'static {
     /// It is important to note that the `TcpListener` will not start accepting clients until `start` is called.
     pub async fn bind<A>(addr: A) -> Result<App<'app, Closed>, std::io::Error>
     where
-        A: ToSocketAddrs,
+        A: AsyncToSocketAddrs,
     {
         let bind_result = TcpListener::bind(addr).await?;
 
@@ -105,19 +107,18 @@ where 'app : 'static {
     /// ```rs
     ///
     /// ```
-    pub async fn add_route<Cls, Fut>(
+    pub async fn add_route<F>(
         &self,
         method: HttpMethod,
         route: &'static str,
         middleware: Vec<ArcMiddlewareClosure>,
-        req_fn: Cls,
+        req_fn: F,
     ) -> Result<(), RouterError>
     where
-        Fut: RequestFuture + 'static,
-        Cls: RequestClosure<Fut> + Send + Sync + 'static,
+        F: for<'a> RequestBound<'a>,
     {
         let req_fn: ArcRequestClosure =
-            Arc::new(move |req: &'static mut HttpRequest, res: &'static mut Resolution| Box::pin(req_fn(req, res)));
+            Arc::new(move |req: &mut HttpRequest, res: &mut Response| req_fn(req, res));
         self.router
             .write()
             .await

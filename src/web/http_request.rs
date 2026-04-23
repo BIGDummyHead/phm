@@ -11,9 +11,8 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 pub use http_request_meta::HttpRequestMeta;
 pub use parsers::Parsers;
 pub use request_error::RequestError;
+use smol::{lock::RwLock, net::TcpStream};
 pub use variables::Variables;
-
-use tokio::{net::TcpStream, sync::RwLock};
 
 pub use http_request_meta_parser::HttpRequestMetaParser;
 

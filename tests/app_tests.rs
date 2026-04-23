@@ -1,21 +1,35 @@
 use std::time::Duration;
 
-use phm::{App, GET, HttpMethod::POST, HttpRequest, RequestError, Resolution};
+use phm::{App, GET, HttpMethod::POST, HttpRequest, RequestError, Response};
+use serde::Serialize;
 
-#[tokio::test]
-async fn start_test() {
-    let mut app = App::bind("127.0.0.1:80").await.expect("failed to bind app");
+#[derive(Serialize)]
+struct User {
+    name: String,
+    age: i32,
+}
 
-    app.get("/api/closed/:id", vec![], |req, _res| async move {
-        let id = req.variables().get_route_variable::<i32>("id");
-        dbg!(id);
-        Ok(())
-    })
-    .await;
+#[test]
+fn start_test() {
+    smol::block_on(async move {
+        let mut app = App::bind("127.0.0.1:80").await.expect("failed to bind app");
 
-    let running_app = app.start().await;
+        app.add_route(GET, "/api/:user_id", vec![], |req, res| {
+            Box::pin(async move {
+                let user = User {
+                    name: String::from("Shawn"),
+                    age: req.variables().get_route_variable::<i32>("user_id")?,
+                };
+                res.json(&user)?.status(200);
+                Ok(())
+            })
+        })
+        .await
+        .expect("Failed");
 
-    tokio::time::sleep(Duration::from_secs(20)).await;
 
-    let mut app = running_app.close().await;
+        let running_app = app.start().await;
+
+        loop {}
+    });
 }

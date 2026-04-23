@@ -1,55 +1,66 @@
 mod worker;
 
-use std::{pin::Pin, sync::Arc};
+use std::marker::PhantomData;
 
-use tokio::sync::{
-    Mutex,
-    mpsc::{self, Sender, error::SendError},
+use smol::{
+    LocalExecutor,
+    channel::{self, SendError, Sender},
 };
 
-//pub use worker::Worker;
-
-pub type SenderData = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-pub struct Manager {
-    sender: Sender<SenderData>,
+pub struct Manager<'f, Fut, FutResult>
+where
+    FutResult: Send,
+    Fut: Future<Output = FutResult> + Send + 'f,
+{
+    sender: Sender<Fut>,
+    phant: PhantomData<&'f ()>,
 }
 
-impl Manager
+impl<'f, Fut, FutResult> Manager<'f, Fut, FutResult>
+where
+    FutResult: Send,
+    Fut: Future<Output = FutResult> + Send + 'f,
 {
-    /// # new
+    /// Creates a new manager from a thread scope.
     ///
-    /// Creates `n` workers to consume incoming work.
-    pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel::<SenderData>(1000);
-        let receiver = Arc::new(Mutex::new(receiver));
+    /// Spawning thread pools based on the thread count.
+    pub fn new<'scope, 'env>(
+        scope: &'scope std::thread::Scope<'scope, 'env>,
+        thread_cnt: usize,
+    ) -> Self
+    where
+        'env: 'scope,
+        Fut: 'env,
+    {
+        let (sx, rx) = channel::bounded::<Fut>(1000);
 
-        // create n workers to work
-        for _ in 0..num_cpus::get() {
-            //clone a receiver that can receive some type of work
-            let rx = receiver.clone();
-            tokio::spawn(async move {
-                loop {
-                    //instantly receive work
-                    let work = rx.lock().await.recv().await;
+        // for the thread count, spawn a scoped thread
+        for _ in 0..thread_cnt {
+            let rx = rx.clone();
+            scope.spawn(move || {
+                // create a new local executor for each thread
+                let lex = LocalExecutor::new();
 
-                    // consume work
-                    if let Some(work) = work {
-                        work.await;
-                    } else {
-                        dbg!("Channel closed");
-                        break;
-                    };
-                }
+                //make this thread async by using a block on
+                smol::block_on(lex.run(async {
+                    while let Ok(data) = rx.recv().await {
+                        lex.spawn(async move {
+                            data.await;
+                        })
+                        .detach();
+                    }
+                }));
             });
         }
 
-        Self { sender }
+        Self {
+            sender: sx,
+            phant: PhantomData,
+        }
     }
 
-    /// sends work to the workers. 
-    /// 
-    /// if sending fails, then a send error is returned with the value you tried to send
-    pub async fn send_work(&self, work: SenderData) -> Result<(), SendError<SenderData>> {
-        self.sender.send(work).await
+    /// Send the future
+    pub async fn send_work(&self, data: Fut) -> Result<(), SendError<Fut>> {
+        self.sender.send(data).await
     }
 }

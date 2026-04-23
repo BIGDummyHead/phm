@@ -2,6 +2,8 @@ use std::{any::Any, collections::HashMap, str::FromStr};
 
 use thiserror::Error;
 
+use crate::RequestError;
+
 /// # Variables
 ///
 /// Variables stored in the request.
@@ -12,20 +14,38 @@ pub struct Variables {
     trace_line: HashMap<String, Box<dyn Any>>,
 }
 
+pub type ConvertTypeName = String;
+pub type ConvertValue = String;
+
 #[derive(Debug, Error)]
 pub enum VariableError {
     #[error("variable does not exist")]
     Missing,
     #[error("could not convert '{0}' to {1}")]
-    CannotConvert(String, String),
+    CannotConvert(ConvertValue, ConvertTypeName),
+}
+
+impl From<VariableError> for RequestError {
+    fn from(value: VariableError) -> Self {
+        let mut req_e = RequestError::default();
+
+        let code = match &value {
+            VariableError::Missing => 404,
+            VariableError::CannotConvert(_, _) => 500,
+        };
+
+        req_e.set_message(value.to_string());
+        req_e.set_status(code);
+
+        req_e
+    }
 }
 
 impl Variables {
-
     pub fn new(route_vars: HashMap<String, String>) -> Self {
         Self {
             trace_line: HashMap::new(),
-            route: route_vars
+            route: route_vars,
         }
     }
 
@@ -65,10 +85,12 @@ impl Variables {
     }
 
     /// # Set Variable
-    /// 
+    ///
     /// Sets a variable (does not override route variables).
     pub fn set_variable<T>(&mut self, key: impl Into<String>, val: T) -> Option<Box<dyn Any>>
-    where T: 'static {
+    where
+        T: 'static,
+    {
         self.trace_line.insert(key.into(), Box::new(val))
     }
 }

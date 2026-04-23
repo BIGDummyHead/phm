@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use tokio::sync::RwLock;
+use smol::lock::RwLock;
 
 use crate::{
     HttpMethod,
