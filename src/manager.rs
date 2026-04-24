@@ -1,3 +1,11 @@
+//! # Manager
+//!
+//! Scoped thread-pool manager used by the running [`App`](crate::App) to
+//! dispatch incoming connections. Each worker thread owns a
+//! [`LocalExecutor`](smol::LocalExecutor) and receives futures over a bounded
+//! channel, so that the producer loop on the accept thread can hand off
+//! work without blocking.
+
 mod worker;
 
 use std::marker::PhantomData;
@@ -7,6 +15,15 @@ use smol::{
     channel::{self, SendError, Sender},
 };
 
+/// # Manager
+///
+/// Bounded-channel handle to a scoped thread pool. Each worker thread
+/// `await`s on the channel for incoming futures and drives them to
+/// completion on a thread-local [`smol::LocalExecutor`].
+///
+/// The `'f` lifetime is the minimum lifetime required by the futures that
+/// will be sent through the channel; `FutResult` is the future's output
+/// type (required to be `Send`).
 pub struct Manager<'f, Fut, FutResult>
 where
     FutResult: Send,

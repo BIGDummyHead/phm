@@ -1,8 +1,19 @@
+//! # HTTP Request Meta
+//!
+//! Immutable container describing the metadata of an incoming request —
+//! method, route, headers, and body bytes — as extracted by one of the
+//! [`HttpRequestMetaParser`](crate::web::http_request::HttpRequestMetaParser)
+//! implementations.
+
 use std::sync::Arc;
 
 use crate::{HttpMethod, web::http_request::http_parser_v1::HeaderMap};
 
-/// Immuatable data about an incoming request from a client.
+/// # HttpRequestMeta
+///
+/// Immutable snapshot of the parsed request: its route, method, headers,
+/// and body. Held by [`HttpRequest`](crate::HttpRequest) alongside the
+/// mutable request context.
 pub struct HttpRequestMeta {
     route: String,
     method: HttpMethod,

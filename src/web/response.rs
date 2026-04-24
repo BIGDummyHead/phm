@@ -1,37 +1,48 @@
+//! # Response
+//!
+//! The [`Response`] builder and its header/body types. A [`Response`] is
+//! constructed per-request, configured by the registered handler and any
+//! middleware, and finally serialised into a byte buffer that is written
+//! back out over the TCP stream.
+
 pub mod http_code;
 
 use linked_hash_map::LinkedHashMap;
+#[cfg(feature = "json")]
 use serde::Serialize;
 use smol::fs;
 use std::{path::Path, sync::Arc};
 
+/// String type used for HTTP header names.
 pub type HeaderKey = String;
+/// String type used for HTTP header values.
 pub type HeaderValue = String;
 
 use crate::{
     RequestError,
     web::{http_code::HttpCode, http_request::Parsers},
 };
-/// Resolution placeholder things will implment on top of this, should last as long as the request itself.
+
+/// # Response
+///
+/// Builder for the outgoing HTTP response. Holds the status code, an
+/// ordered header map, an optional body, and the parser that will be used
+/// to serialise the final byte payload.
 pub struct Response {
     headers: LinkedHashMap<HeaderKey, HeaderValue>,
     status: HttpCode,
     body: Option<Arc<[u8]>>,
-    version: String,
+    parser: Parsers,
 }
 
 impl Response {
+    /// Create a new response object with the selected parser (determines how the data is encoded)
     pub fn new(parser: &Parsers) -> Self {
-        let version = match parser {
-            Parsers::HttpV1 => "HTTP/1.1",
-        }
-        .to_string();
-
         Self {
             headers: LinkedHashMap::new(),
             status: HttpCode::OK,
             body: None,
-            version,
+            parser: parser.clone(),
         }
     }
 
@@ -61,7 +72,8 @@ impl Response {
         &self.headers
     }
 
-    pub fn body(&mut self, body: impl Into<Arc<[u8]>>) -> &mut Response {
+    /// set the body of the response.
+    pub fn set_body(&mut self, body: impl Into<Arc<[u8]>>) -> &mut Response {
         let data = body.into();
 
         let content_length = data.len();
@@ -71,61 +83,81 @@ impl Response {
         self
     }
 
+    /// sets the body to none
     pub fn no_body(&mut self) -> &mut Response {
         self.body = None;
         self
     }
 
+    /// Changes the header `Content-Type` to `text/plain` and sets the body to represent the `UTF-8`.
     pub fn text(&mut self, text: impl Into<String>) -> &mut Response {
         self.set_header("Content-Type", "text/plain");
-        self.body(text.into().as_bytes());
+        self.set_body(text.into().as_bytes());
         self
     }
 
-    pub async fn file(
-        &mut self,
-        file_path: impl Into<String>,
-    ) -> Result<&mut Response, std::io::Error> {
-        let file_path = file_path.into();
-        let path = Path::new(&file_path);
+    /// From a file path attempts to read and return the file data to the user.
+    ///
+    /// ## Returns
+    ///
+    /// If the path does not exist, an error is returned.
+    ///
+    /// If the file cannot be read, an error is returned.
+    pub async fn file(&mut self, file_path: &str) -> Result<&mut Response, std::io::Error> {
+        let path = Path::new(file_path);
+
+        // check if the path exist
         if !Path::exists(path) {
-            return Err(std::io::Error::from(std::io::ErrorKind::NotFound));
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+        } else {
+            // read the file, set the header, set the body, and return the response builder
+            let file_content = fs::read(path).await?;
+
+            self.set_header("Content-Type", get_file_type_header(&file_path));
+            self.set_body(file_content);
+            Ok(self)
         }
-
-        let file_content = fs::read(path).await?;
-
-        self.set_header("Content-Type", get_file_type_header(&file_path));
-        self.body(file_content);
-        Ok(self)
     }
 }
 
+/// Serialises a [`Response`] into the wire-format byte buffer dictated by
+/// the configured [`Parsers`] variant (for example, HTTP/1.1 framing).
 impl Into<Arc<[u8]>> for Response {
     fn into(self) -> Arc<[u8]> {
-        let header_first = format!(
-            "{} {} {}\r\n",
-            self.version,
-            self.status.as_status_code(),
-            self.status.as_status()
-        );
+        match self.parser {
+            Parsers::HttpV1 => {
+                let header_first = format!(
+                    "HTTP/1.1 {} {}\r\n",
+                    self.status.as_status_code(),
+                    self.status.as_status()
+                );
 
-        let mut buffer: Vec<u8> = vec![];
-        buffer.extend(header_first.into_bytes());
+                let mut buffer: Vec<u8> = vec![];
+                buffer.extend(header_first.into_bytes());
 
-        for (k, v) in self.headers {
-            buffer.extend(format!("{k}: {v}\r\n").into_bytes());
+                for (k, v) in self.headers {
+                    buffer.extend(format!("{k}: {v}\r\n").into_bytes());
+                }
+                buffer.extend(b"\r\n");
+
+                if let Some(body) = self.body {
+                    buffer.extend(body.iter());
+                }
+
+                buffer.into()
+            }
         }
-        buffer.extend(b"\r\n");
-
-        if let Some(body) = self.body {
-            buffer.extend(body.iter());
-        }
-
-        buffer.into()
     }
 }
 
+#[cfg(feature = "json")]
 impl Response {
+    /// Serialises `val` as JSON, sets the `Content-Type` header to
+    /// `application/json`, and stores the resulting bytes as the response
+    /// body.
+    ///
+    /// Returns the [`serde_json::Error`] produced by `serde_json::to_string`
+    /// if serialisation fails.
     pub fn json<T>(&mut self, val: &T) -> Result<&mut Response, serde_json::Error>
     where
         T: Serialize,
@@ -133,12 +165,14 @@ impl Response {
         let json_content = serde_json::to_string(&val)?;
 
         self.set_header("Content-Type", "application/json");
-        self.body(json_content.into_bytes());
+        self.set_body(json_content.into_bytes());
 
         Ok(self)
     }
 }
 
+// ? Convert serde_json::Error into RequestError
+#[cfg(feature = "json")]
 impl From<serde_json::Error> for RequestError {
     fn from(value: serde_json::Error) -> Self {
         let mut req_e = RequestError::default();
@@ -148,6 +182,7 @@ impl From<serde_json::Error> for RequestError {
     }
 }
 
+// ? Convert STD IO Errors into request errors
 impl From<std::io::Error> for RequestError {
     fn from(value: std::io::Error) -> Self {
         let code = match value.kind() {

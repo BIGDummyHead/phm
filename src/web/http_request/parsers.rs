@@ -1,3 +1,10 @@
+//! # Parsers
+//!
+//! Thin dispatcher enum selecting which concrete
+//! [`HttpRequestMetaParser`] implementation will be used to parse an
+//! incoming request. Configured on the [`App`](crate::App) before it is
+//! started.
+
 use smol::net::TcpStream;
 
 use crate::web::http_request::{HttpRequestMeta, HttpRequestMetaParser, http_parse_error::HttpParseError, http_parser_v1::HttpParserV1};
@@ -6,6 +13,9 @@ use crate::web::http_request::{HttpRequestMeta, HttpRequestMetaParser, http_pars
 #[derive(Default, Clone, Debug)]
 pub enum Parsers {
 
+    /// The HTTP/1.1 parser backed by
+    /// [`HttpParserV1`](crate::web::http_request::http_parser_v1::HttpParserV1).
+    /// This is the default parser used when no other is configured.
     #[default]
     HttpV1
 }

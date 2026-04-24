@@ -1,29 +1,43 @@
+//! # App
+//!
+//! Defines the lifecycle typestate for an application. An [`App`] begins in
+//! the [`Closed`] state (bound to a socket, routes may be added) and can be
+//! transitioned into the [`Running`] state by calling
+//! [`App::start`]. The running state continues accepting connections in a
+//! background thread until [`Running::close`](running::Running) is awaited.
+
 use std::sync::Arc;
 
 use crate::{
     HttpMethod, HttpRequest, Response,
     router::{Router, RouterError},
     web::{
-        ArcMiddlewareClosure, ArcRequestClosure, RequestBound, RequestClosure, RequestFuture,
+        ArcMiddlewareClosure, ArcRequestClosure, FutureClosureBound,
         http_request::Parsers,
     },
 };
 
-mod module;
 mod running;
 
-pub use module::Module;
 pub use running::Running;
 use smol::{
     lock::RwLock,
     net::{AsyncToSocketAddrs, TcpListener},
 };
 
-/// The app state is closed.
+/// Marker state indicating the application is bound to a socket but not yet
+/// accepting connections. Routes and parser settings may be configured while
+/// in this state.
 pub struct Closed {
     http_parser: Option<Parsers>,
 }
 
+/// The top-level application, parameterised by its lifecycle state `T`
+/// (either [`Closed`] or [`Running`]).
+///
+/// The `'app` lifetime scopes route strings and router internals; it is
+/// required to be `'static` in practice so that the listener thread can
+/// safely hold onto router data.
 pub struct App<'app, T>
 where
     'app: 'static,
@@ -53,7 +67,7 @@ macro_rules! add_httpmethod {
             req_fn: F,
         ) -> ()
         where
-            F: for<'a> RequestBound<'a>,
+            F: for<'a> FutureClosureBound<'a>,
         {
             Self::add_route(self, $method, route, middleware, req_fn)
                 .await
@@ -115,7 +129,7 @@ where
         req_fn: F,
     ) -> Result<(), RouterError>
     where
-        F: for<'a> RequestBound<'a>,
+        F: for<'a> FutureClosureBound<'a>,
     {
         let req_fn: ArcRequestClosure =
             Arc::new(move |req: &mut HttpRequest, res: &mut Response| req_fn(req, res));
@@ -137,29 +151,12 @@ where
         self.state.http_parser = Some(selected);
     }
 
-    /// # Module
-    ///
-    /// Creates a new module that with the given base route.
-    ///
-    /// ## Example
-    ///
-    /// ```rs
-    /// let mut app = ...
-    ///
-    /// let mut module = app.module("/api");
-    ///
-    /// module.add_route(HttpMethod::GET, "/closed", vec![], |req, res| async move { Ok(()) });
-    /// ```
-    pub fn module(&'app self, base_route: &'app str) -> Module<'app> {
-        Module::new(base_route, self)
-    }
-
     /// # Start
     ///
     /// Attempts to start the application.
     ///
     /// Returns a running instance of the application.
-    pub async fn start(self) -> App<'app, Running> {
-        App::running(self).await
+    pub fn start(self) -> App<'app, Running> {
+        App::run(self)
     }
 }

@@ -1,3 +1,10 @@
+//! # Variables
+//!
+//! Request-scoped variable store attached to each [`HttpRequest`]. Holds the
+//! route parameters captured by the router and a "trace line" of
+//! arbitrary, dynamically-typed values that middleware and handlers can
+//! set and read back across the request pipeline.
+
 use std::{any::Any, collections::HashMap, str::FromStr};
 
 use thiserror::Error;
@@ -14,9 +21,17 @@ pub struct Variables {
     trace_line: HashMap<String, Box<dyn Any>>,
 }
 
+/// String identifying the destination type name in a failed
+/// [`VariableError::CannotConvert`].
 pub type ConvertTypeName = String;
+/// String holding the source value that could not be converted in a failed
+/// [`VariableError::CannotConvert`].
 pub type ConvertValue = String;
 
+/// # VariableError
+///
+/// Errors that can occur when reading a variable from a [`Variables`]
+/// store.
 #[derive(Debug, Error)]
 pub enum VariableError {
     #[error("variable does not exist")]
@@ -25,6 +40,9 @@ pub enum VariableError {
     CannotConvert(ConvertValue, ConvertTypeName),
 }
 
+/// Converts a [`VariableError`] into a [`RequestError`]. `Missing` maps to
+/// a 404 and `CannotConvert` maps to a 500; the original error message is
+/// preserved.
 impl From<VariableError> for RequestError {
     fn from(value: VariableError) -> Self {
         let mut req_e = RequestError::default();
@@ -42,6 +60,8 @@ impl From<VariableError> for RequestError {
 }
 
 impl Variables {
+    /// Creates a new [`Variables`] store seeded with the route parameters
+    /// captured by the router. The trace-line map starts empty.
     pub fn new(route_vars: HashMap<String, String>) -> Self {
         Self {
             trace_line: HashMap::new(),

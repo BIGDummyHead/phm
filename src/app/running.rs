@@ -1,8 +1,17 @@
+//! # Running
+//!
+//! Implements the [`Running`] lifecycle state of [`App`]. Spawns a dedicated
+//! background thread that hosts a scoped thread pool (managed by
+//! [`Manager`](crate::manager)) and dispatches incoming TCP connections to
+//! worker threads, parses them using the configured HTTP parser, invokes any
+//! registered middleware, and finally runs the request closure for the
+//! matched route.
+
 use std::{pin::Pin, sync::Arc};
 
 use futures::{FutureExt, select};
 use smol::{
-    channel,
+    channel::{self, Receiver},
     io::AsyncWriteExt,
     lock::RwLock,
     net::{TcpListener, TcpStream},
@@ -13,19 +22,17 @@ use crate::{
     web::http_request::Parsers,
 };
 
+/// Represents a Running state of an application
 pub struct Running {
     poison: Pin<Box<dyn Future<Output = ()>>>,
     http_parser: Parsers,
 }
 
-impl<'app> App<'app, Running>
-where
-    'app: 'static,
-{
+impl<'app> App<'app, Running> {
     /// # Running
     ///
     /// Creates a new running app that will handle all incoming connections until its timely death.
-    pub async fn running(closed: App<'app, Closed>) -> App<'app, Running> {
+    pub fn run(closed: App<'app, Closed>) -> App<'app, Running> {
         let http_parser = closed.state.http_parser.unwrap_or(Parsers::default());
         //create a sender and receiver for our poison and interception.
         let (poison_sender, poison_receiver) = channel::bounded(1);
@@ -41,6 +48,31 @@ where
         let listener_router = closed.router.clone();
         let task_http_parser = http_parser.clone();
 
+        Self::spawn_background_thread(
+            poison_receiver,
+            task_http_parser,
+            listener_ref,
+            listener_router,
+        );
+
+        Self {
+            client: closed.client,
+            router: closed.router,
+            state: Running {
+                poison,
+                http_parser,
+            },
+        }
+    }
+
+    fn spawn_background_thread(
+        poison_receiver: Receiver<bool>,
+        task_http_parser: Parsers,
+        listener_ref: Arc<TcpListener>,
+        listener_router: Arc<RwLock<Router<'app>>>,
+    ) where
+        'app: 'static,
+    {
         std::thread::spawn(|| {
             std::thread::scope(|scope| {
                 let thread_count: usize = std::thread::available_parallelism().unwrap().into();
@@ -76,20 +108,10 @@ where
                         if let Err(e) = manager.send_work(work).await {
                             dbg!("failure to send work", e);
                         }
-
                     }
                 });
             });
         });
-
-        Self {
-            client: closed.client,
-            router: closed.router,
-            state: Running {
-                poison,
-                http_parser,
-            },
-        }
     }
 
     /// # Close
@@ -120,11 +142,9 @@ async fn handle_connection<'app>(
 ) -> std::io::Result<()> {
     let stream = Arc::new(RwLock::new(stream));
 
-    let router_ref = router.read().await;
-    let parse = HttpRequest::parse(&parser, &router_ref, stream.clone(), socket).await;
+    let parse = HttpRequest::parse(&parser, router.clone(), stream.clone(), socket).await;
     let response = match parse {
         Err(e) => {
-
             dbg!(e);
 
             let mut res = Response::new(&parser);
@@ -140,23 +160,30 @@ async fn handle_connection<'app>(
             let node_guard = node.read().await;
 
             if let Some(func) = node_guard.request_fn() {
+                let mut middleware_stops = false;
                 // loop over each middleware item, if middleware indicates stop. Return
                 for cmw in node_guard.middleware() {
                     match cmw(&mut req, &mut res).await {
-                        crate::web::Middleware::Stop => return Ok(()),
+                        crate::web::Middleware::Stop => {
+                            middleware_stops = true;
+                            break;
+                        }
                         crate::web::Middleware::Next => continue,
                     }
                 }
 
-                //call the resolution function
-                let func = func.clone();
-                let result = (*func)(&mut req, &mut res).await;
+                // only call the request function if the middleware did NOT stop.
+                if !middleware_stops {
+                    //call the resolution function
+                    let func = func.clone();
+                    let result = (*func)(&mut req, &mut res).await;
 
-                if let Err(e) = result {
-                    res.status(*e.status());
+                    if let Err(e) = result {
+                        res.status(*e.status());
 
-                    if let Some(m) = e.message() {
-                        res.text(m);
+                        if let Some(m) = e.message() {
+                            res.text(m);
+                        }
                     }
                 }
             }
@@ -168,11 +195,8 @@ async fn handle_connection<'app>(
     let mut stream_write_guard = stream.write().await;
 
     let write: Arc<[u8]> = response.into();
-    stream_write_guard
-        .write(&write)
-        .await
-        .expect("STREAM FAILED :(");
-    stream_write_guard.flush().await.expect("turd");
+    stream_write_guard.write(&write).await?;
+    stream_write_guard.flush().await?;
 
     Ok(())
 }

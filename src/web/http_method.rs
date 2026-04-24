@@ -1,3 +1,8 @@
+//! # HTTP Method
+//!
+//! Defines [`HttpMethod`], the enum used throughout the crate to identify
+//! the verb of an incoming request or of a registered route.
+
 /// # Http Method
 ///
 /// HTTP defines a set of request methods to indicate the purpose of the request and what is expected if the request is successful. Although they can also be nouns, these request methods are sometimes referred to as HTTP verbs. Each request method has its own semantics, but some characteristics are shared across multiple methods, specifically request methods can be safe, idempotent, or cacheable.

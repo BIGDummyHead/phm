@@ -1,34 +1,50 @@
-use std::time::Duration;
-
-use phm::{App, GET, HttpMethod::POST, HttpRequest, RequestError, Response};
-use serde::Serialize;
-
-#[derive(Serialize)]
-struct User {
-    name: String,
-    age: i32,
-}
+use phm::{App, GET, Middleware, middleware};
 
 #[test]
 fn start_test() {
     smol::block_on(async move {
-        let mut app = App::bind("127.0.0.1:80").await.expect("failed to bind app");
+        let app = App::bind("127.0.0.1:80").await.expect("failed to bind app");
 
-        app.add_route(GET, "/api/:user_id", vec![], |req, res| {
+        let stop_1 = middleware(|req, _res| {
             Box::pin(async move {
-                let user = User {
-                    name: String::from("Shawn"),
-                    age: req.variables().get_route_variable::<i32>("user_id")?,
-                };
-                res.json(&user)?.status(200);
-                Ok(())
+                req.variables_mut().set_variable("user", "Shawn");
+                Middleware::Next
             })
-        })
+        });
+
+        let stop_2 = middleware(|req, _res| {
+            Box::pin(async move {
+                let var = req
+                    .variables()
+                    .get_variable::<&str>("user")
+                    .expect("Failed to get that var");
+                println!("Var: {var}");
+                Middleware::Next
+            })
+        });
+
+        let stop_3 = middleware(|_req, res| {
+            Box::pin(async move {
+                res.status(500).text("Fuck off!");
+                Middleware::Stop
+            })
+        });
+
+        app.add_route(
+            GET,
+            "/:user_id",
+            vec![stop_1, stop_2, stop_3],
+            |_req, _res| {
+                Box::pin(async move {
+                    //res.json(&user)?.status(200);
+                    Ok(())
+                })
+            },
+        )
         .await
         .expect("Failed");
 
-
-        let running_app = app.start().await;
+        app.start();
 
         loop {}
     });

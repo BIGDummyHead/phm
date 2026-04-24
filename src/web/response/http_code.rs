@@ -1,3 +1,8 @@
+//! # HTTP Code
+//!
+//! Enumerates every standard HTTP status code and provides conversions to
+//! and from its numeric representation and its reason phrase.
+
 /// # Http Code
 ///
 /// Describes a status that is served with HTTP request.
@@ -504,27 +509,11 @@ impl HttpCode {
 
         String::from(status)
     }
-
-    /// # As Header
-    ///
-    /// Returns the HTTP status as a header variant.
-    ///
-    /// For example
-    ///
-    /// ```
-    /// use async_web::web::resolution::http_code::HttpCode;
-    /// let status_code = HttpCode::OK;
-    ///
-    /// let header: String = status_code.as_header(); // -> "HTTP/1.1 200 OK"
-    /// ```
-    pub fn as_header(&self) -> String {
-        let status = self.as_status();
-        let code = self.as_status_code();
-
-        format!("HTTP/1.1 {code} {status}")
-    }
 }
 
+/// Maps a numeric status code (e.g. `200`) to the corresponding
+/// [`HttpCode`] variant. Unknown codes fall through to
+/// [`HttpCode::Other`].
 impl Into<HttpCode> for u32 {
     fn into(self) -> HttpCode {
         match self {
@@ -595,6 +584,8 @@ impl Into<HttpCode> for u32 {
     }
 }
 
+/// Converts an [`HttpCode`] back into its numeric status code by delegating
+/// to [`HttpCode::as_status_code`].
 impl Into<u32> for HttpCode {
     fn into(self) -> u32 {
         self.as_status_code()

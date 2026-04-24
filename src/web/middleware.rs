@@ -1,8 +1,14 @@
+//! # Middleware
+//!
+//! Defines the [`Middleware`] control enum returned from middleware futures
+//! and the [`middleware`] factory used to wrap an async closure into an
+//! [`ArcMiddlewareClosure`] suitable for attaching to a route.
+
 use std::sync::Arc;
 
 use crate::{
     HttpRequest, Response,
-    web::{ArcMiddlewareClosure, MiddlewareClosure, MiddlewareFuture},
+    web::{ArcMiddlewareClosure, FutureMiddlewareBound},
 };
 
 /// # Middleware
@@ -19,11 +25,21 @@ pub enum Middleware {
     Next,
 }
 
-/// TODO: DOCUMENT
-pub fn middleware<'req, Fut, Cls>(m: Cls) -> ArcMiddlewareClosure
+/// # middleware
+///
+/// Wraps an async closure into an [`ArcMiddlewareClosure`] so it can be
+/// stored in the router and executed before the request handler.
+///
+/// The supplied closure receives mutable references to the current
+/// [`HttpRequest`] and [`Response`] and must resolve to a [`Middleware`]
+/// value indicating whether the router should proceed to the next layer or
+/// short-circuit.
+pub fn middleware<F>(m_fn: F) -> ArcMiddlewareClosure
 where
-    Fut: MiddlewareFuture + Send + Sync + 'static,
-    Cls: MiddlewareClosure<Fut> + Send + Sync + 'static,
+    F: for<'a> FutureMiddlewareBound<'a>,
 {
-    Arc::new(move |req: &mut HttpRequest, res: &mut Response| Box::pin(m(req, res)))
+    let mid: ArcMiddlewareClosure =
+        Arc::new(move |req: &mut HttpRequest, res: &mut Response| m_fn(req, res));
+
+    mid
 }

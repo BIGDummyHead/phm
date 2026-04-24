@@ -1,3 +1,9 @@
+//! # HTTP/1.1 Parser
+//!
+//! [`HttpRequestMetaParser`] implementation for HTTP/1.1. Reads the request
+//! line, header block, and body (either length-prefixed or chunked) from a
+//! [`TcpStream`] and produces an [`HttpRequestMeta`].
+
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
@@ -8,9 +14,15 @@ use crate::{
     web::http_request::{HttpRequestMeta, HttpRequestMetaParser, http_parse_error::HttpParseError},
 };
 
+/// Case-insensitive map from header name to header value produced while
+/// parsing the request. Keys and values are stored lower-cased.
 pub type HeaderMap = HashMap<String, String>;
 
-// responsible for parsing http1 request.
+/// # HttpParserV1
+///
+/// Zero-sized HTTP/1.1 parser. Implements [`HttpRequestMetaParser`] to
+/// drive reading the request line, headers, and body from an incoming TCP
+/// stream.
 #[derive(Default)]
 pub struct HttpParserV1;
 

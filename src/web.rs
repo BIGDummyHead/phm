@@ -1,3 +1,9 @@
+//! # Web
+//!
+//! HTTP protocol layer for the crate: request and response types, status
+//! codes, HTTP methods, middleware machinery, and the trait bounds /
+//! type-aliases that make async closures usable as handlers.
+
 mod http_method;
 pub mod http_request;
 mod middleware;
@@ -15,66 +21,82 @@ pub use crate::web::http_request::RequestError;
 /// The type that is returned by all Request futures.
 pub type RequestFnResult = Result<(), RequestError>;
 
-pub trait MiddlewareClosure<Fut>: Fn(&mut HttpRequest, &mut Response) -> Fut
-where
-    Fut: MiddlewareFuture,
-{
-}
-impl<Fut, T> MiddlewareClosure<Fut> for T
-where
-    Fut: MiddlewareFuture,
-    T: Fn(&mut HttpRequest, &mut Response) -> Fut,
-{
-}
 
-pub trait MiddlewareFuture: Future<Output = Middleware> {}
-impl<T> MiddlewareFuture for T where T: Future<Output = Middleware> {}
 
-pub type PinnedMiddlewareFuture = Pin<Box<dyn MiddlewareFuture + Send + Sync>>;
+/// The pinned, boxed, `Send` future produced by a request handler closure.
+/// Requests resolve to a [`RequestFnResult`].
+pub type PinnedRequestFuture<'a> = Pin<Box<dyn Future<Output = RequestFnResult> + Send + 'a>>;
 
-pub type ArcMiddlewareClosure =
-    Arc<dyn Fn(&mut HttpRequest, &mut Response) -> PinnedMiddlewareFuture + Send + Sync>;
-
-/// A trait that represents a closure that returns the future of a request.
-pub trait RequestClosure<Fut>: Fn(&mut HttpRequest, &mut Response) -> Fut
-where
-    Fut: RequestFuture,
-{
-}
-impl<Fut, T> RequestClosure<Fut> for T
-where
-    Fut: RequestFuture,
-    T: Fn(&mut HttpRequest, &mut Response) -> Fut,
-{
-}
-
-/// A trait in which the Future's output is a `RequestFnResult`.
-///
-/// This is implemented for all T where the `Future` output is `RequestFnResult`
-pub trait RequestFuture: Future<Output = RequestFnResult> + Send + Sync {}
-impl<T> RequestFuture for T where T: Future<Output = RequestFnResult> + Send + Sync {}
-
-pub type PinnedRequestFuture<'a> = Pin<Box<dyn Future<Output = Result<(), RequestError>> + Send + Sync + 'a>>;
+/// An `Arc`-wrapped, dyn-compatible request handler closure that takes a
+/// mutable reference to the [`HttpRequest`] and [`Response`] and returns a
+/// [`PinnedRequestFuture`]. This is the stored form of every handler in
+/// the router.
 pub type ArcRequestClosure = Arc<
-    dyn for<'a> Fn(&'a mut HttpRequest, &'a mut Response) -> PinnedRequestFuture<'a>
-        + Send
-        + Sync,
+    dyn for<'a> Fn(&'a mut HttpRequest, &'a mut Response) -> PinnedRequestFuture<'a> + Send + Sync,
 >;
 
-pub trait RequestBound<'a>:
+/// Used for the app routing
+///  
+/// Ensures that the passed in dyn fn (closure) has the parameters (req, res) and return a boxed future that is Send and lives for at least as long as the variables itself.
+pub trait FutureClosureBound<'a>:
     Fn(
         &'a mut HttpRequest,
         &'a mut Response,
-    ) -> Pin<Box<dyn Future<Output = Result<(), RequestError>> + Send + Sync + 'a>>
+    ) -> Pin<Box<dyn Future<Output = RequestFnResult> + Send + 'a>>
     + Send
     + Sync
     + 'static
 {
 }
 
-impl<'a, T: Fn(&'a mut HttpRequest, &'a mut Response) -> PinnedRequestFuture<'a> + Send + Sync>
-    RequestBound<'a> for T
-where
-    T: 'static,
+// default implementation so that closures can be used.
+impl<'a, T> FutureClosureBound<'a> for T where
+    T: Fn(
+            &'a mut HttpRequest,
+            &'a mut Response,
+        ) -> Pin<Box<dyn Future<Output = RequestFnResult> + Send + 'a>>
+        + Send
+        + Sync
+        + 'static
+{
+}
+
+
+/// The pinned, boxed, `Send` future produced by a middleware closure.
+/// Resolves to a [`Middleware`] value that tells the router whether to
+/// continue down the chain or stop and respond early.
+pub type PinnedMiddlewareFuture<'a> = Pin<Box<dyn Future<Output = Middleware> + Send + 'a>>;
+
+/// An `Arc`-wrapped, dyn-compatible middleware closure. Shaped like
+/// [`ArcRequestClosure`] but resolves to a [`Middleware`] control value
+/// instead of a [`RequestFnResult`].
+pub type ArcMiddlewareClosure = Arc<
+    dyn for<'a> Fn(&'a mut HttpRequest, &'a mut Response) -> PinnedMiddlewareFuture<'a> + Send + Sync,
+>;
+
+/// Trait bound for middleware closures. Mirrors
+/// [`FutureClosureBound`] but its associated future resolves to a
+/// [`Middleware`] control value. A blanket impl is provided for any closure
+/// that already satisfies the required `Fn` signature.
+pub trait FutureMiddlewareBound<'a>:
+    Fn(
+        &'a mut HttpRequest,
+        &'a mut Response,
+    ) -> Pin<Box<dyn Future<Output = Middleware> + Send + 'a>>
+    + Send
+    + Sync
+    + 'static
+{
+}
+
+// default implementation so that closures can be used for middleware.
+impl<'a, T> FutureMiddlewareBound<'a> for T where
+    T: Fn(
+            &'a mut HttpRequest,
+            &'a mut Response,
+        ) -> Pin<Box<dyn Future<Output = Middleware> + Send + 'a>>
+        + Send
+        + Sync
+        + 'static
 {
 }

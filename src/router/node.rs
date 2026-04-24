@@ -1,3 +1,9 @@
+//! # Node
+//!
+//! A single node in the router's trie. Each node owns a map from child
+//! route segment → [`HttpMethod`] → child node, along with the middleware
+//! and (optional) request closure associated with this segment.
+
 use std::{
     collections::HashMap,
     sync::{Arc, LazyLock},
@@ -11,9 +17,18 @@ use crate::{
     web::{ArcMiddlewareClosure, ArcRequestClosure},
 };
 
+/// The character used to mark a route segment as a variable (e.g.
+/// `/users/:id`). Segments starting with this character match any single
+/// path component and capture the value into the request's variables.
 pub static VARIABLE_ROUTE_SIGN: LazyLock<char> = LazyLock::new(|| ':');
 
 type MethodToNode<'app> = HashMap<HttpMethod, Arc<RwLock<Node<'app>>>>;
+
+/// # Node
+///
+/// Trie node used by [`Router`](crate::router::Router) to represent a
+/// single segment of a registered route. A node may hold multiple children
+/// per segment string, differentiated by [`HttpMethod`].
 pub struct Node<'app> {
     children: HashMap<&'app str, MethodToNode<'app>>,
     /// The portion of the route that is stored here (/api/**test**)
@@ -134,6 +149,11 @@ impl<'app> Node<'app> {
         &self.middleware
     }
 
+    /// # Request Function
+    ///
+    /// The closure that should be invoked to produce a response when a
+    /// request matches this node. Returns `None` if the node is purely an
+    /// intermediate node in the trie (no handler registered).
     pub fn request_fn(&self) -> Option<&ArcRequestClosure> {
         match &self.request_closure {
             Some(c) => Some(c),
