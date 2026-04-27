@@ -29,3 +29,25 @@ pub enum HttpMethod {
     /// This request header is not apart of the standard HTTP request headers.
     Unknown(String),
 }
+
+impl<T> From<T> for HttpMethod
+where
+    T: Into<String>,
+{
+    fn from(value: T) -> Self {
+        let unknown_str = value.into().trim().to_uppercase();
+
+        match unknown_str.as_ref() {
+            "GET" => HttpMethod::GET,
+            "POST" => HttpMethod::POST,
+            "PATCH" => HttpMethod::PATCH,
+            "PUT" => HttpMethod::PUT,
+            "DELETE" => HttpMethod::DELETE,
+            "HEAD" => HttpMethod::HEAD,
+            "OPTIONS" => HttpMethod::OPTIONS,
+            "CONNECT" => HttpMethod::CONNECT,
+            "TRACE" => HttpMethod::TRACE,
+            _ => HttpMethod::Unknown(unknown_str),
+        }
+    }
+}

@@ -11,3 +11,9 @@ proc-macro2 = "1.0.106"
 quote = "1.0.45"
 syn = { version = "2.0.117", features = ["full"] }
 phm = {version = "0.1.0", path = "../"}
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+darling = "0.23.0"
+
+[dev-dependencies]
+smol = "2.0.2"

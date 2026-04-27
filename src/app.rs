@@ -16,6 +16,9 @@ use crate::{
 
 mod module;
 mod running;
+mod route_definition;
+
+pub use route_definition::{RouteDefinition, ClosedAppExt};
 
 pub use module::Module;
 pub use running::Running;
@@ -139,6 +142,7 @@ where
             .await
     }
 
+    
     /// # Set 404
     ///
     /// Attempts to add the route to the router.
