@@ -3,6 +3,9 @@
 //! Enumerates every standard HTTP status code and provides conversions to
 //! and from its numeric representation and its reason phrase.
 
+#[cfg(feature = "json")]
+use serde::Serialize;
+
 /// # Http Code
 ///
 /// Describes a status that is served with HTTP request.
@@ -28,6 +31,7 @@
 /// ## Notable implementations
 ///
 /// `Copy`, `Clone`, `Resolution`, `Into<HttpCode> for u32`
+#[cfg_attr(feature = "json", derive(Serialize))]
 #[derive(Copy, Clone, Debug, Default)]
 pub enum HttpCode {
     /// # Continue

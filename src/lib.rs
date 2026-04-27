@@ -17,7 +17,7 @@ pub mod app;
 /// Internal module hosting the HTTP abstractions (methods, requests,
 /// responses, middleware, and status codes). Selected items are re-exported
 /// from the crate root.
-mod web;
+pub mod web;
 
 mod router;
 

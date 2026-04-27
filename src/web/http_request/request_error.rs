@@ -4,48 +4,29 @@
 //! the framework to respond with a specific status code and optional
 //! message instead of the handler's own response body.
 
-use crate::web::http_code::HttpCode;
+use std::{pin::Pin};
+
+use crate::Response;
 
 /// # RequestError
 ///
-/// Failure produced by a request handler. Carries an [`HttpCode`] that will
-/// be applied to the outgoing [`Response`](crate::Response) and an optional
-/// message that, if present, is written into the response body.
-#[derive(Debug)]
+/// Failure produced by a request handler. Carries a handler function that is invoked on request errors.
+/// 
+/// 
 pub struct RequestError {
-    status: HttpCode,
-    message: Option<String>,
-}
-
-/// Produces a [`RequestError`] whose status defaults to
-/// [`HttpCode::InternalServerError`] with no message.
-impl Default for RequestError {
-    fn default() -> Self {
-        Self {
-            status: HttpCode::InternalServerError,
-            message: None,
-        }
-    }
+    handler: Pin<Box<dyn Fn(&mut Response) -> () + Send + 'static>>,
 }
 
 impl RequestError {
-    /// Set the status of the request error
-    pub fn set_status(&mut self, status: impl Into<HttpCode>) -> () {
-        self.status = status.into();
+    pub fn new<F>(handler: F) -> Self
+    where
+        F: Fn(&mut Response) -> () + Send + 'static,
+    {
+        let handler = Box::pin(handler);
+        Self { handler }
     }
 
-    /// Set the reason that the request failed
-    pub fn set_message(&mut self, msg: impl Into<String>) -> () {
-        self.message = Some(msg.into());
-    }
-
-    /// The status code that will be applied to the outgoing response.
-    pub fn status(&self) -> &HttpCode {
-        &self.status
-    }
-
-    /// The optional message, if one was set by [`Self::set_message`].
-    pub fn message(&self) -> Option<&String> {
-        self.message.as_ref()
+    pub fn handle(&self, response: &mut Response) -> () {
+        (*self.handler)(response);
     }
 }

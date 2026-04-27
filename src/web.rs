@@ -21,8 +21,6 @@ pub use crate::web::http_request::RequestError;
 /// The type that is returned by all Request futures.
 pub type RequestFnResult = Result<(), RequestError>;
 
-
-
 /// The pinned, boxed, `Send` future produced by a request handler closure.
 /// Requests resolve to a [`RequestFnResult`].
 pub type PinnedRequestFuture<'a> = Pin<Box<dyn Future<Output = RequestFnResult> + Send + 'a>>;
@@ -61,7 +59,6 @@ impl<'a, T> FutureClosureBound<'a> for T where
 {
 }
 
-
 /// The pinned, boxed, `Send` future produced by a middleware closure.
 /// Resolves to a [`Middleware`] value that tells the router whether to
 /// continue down the chain or stop and respond early.
@@ -71,7 +68,9 @@ pub type PinnedMiddlewareFuture<'a> = Pin<Box<dyn Future<Output = Middleware> + 
 /// [`ArcRequestClosure`] but resolves to a [`Middleware`] control value
 /// instead of a [`RequestFnResult`].
 pub type ArcMiddlewareClosure = Arc<
-    dyn for<'a> Fn(&'a mut HttpRequest, &'a mut Response) -> PinnedMiddlewareFuture<'a> + Send + Sync,
+    dyn for<'a> Fn(&'a mut HttpRequest, &'a mut Response) -> PinnedMiddlewareFuture<'a>
+        + Send
+        + Sync,
 >;
 
 /// Trait bound for middleware closures. Mirrors
@@ -99,4 +98,30 @@ impl<'a, T> FutureMiddlewareBound<'a> for T where
         + Sync
         + 'static
 {
+}
+
+#[macro_export]
+macro_rules! middleware {
+    () => {
+        ::std::vec::Vec::new()
+    };
+    ($( $items:ident ),* ) => {{
+        let mut collection: ::std::vec::Vec<$crate::web::ArcMiddlewareClosure> =
+            ::std::vec::Vec::new();
+
+        $( collection.push($items.clone()); )*
+
+        collection
+    }};
+}
+
+#[macro_export]
+macro_rules! request {
+    (|$req:ident, $res:ident| $body:block) => {
+        |$req: &mut $crate::HttpRequest<'_>, $res: &mut $crate::Response| { ::std::boxed::Box::pin(async $body) }
+    };
+
+    (move |$req:ident, $res:ident| $body:block) => {
+        move |$req: &mut $crate::HttpRequest<'_>, $res: &mut $crate::Response| { ::std::boxed::Box::pin(async move $body) }
+    };
 }

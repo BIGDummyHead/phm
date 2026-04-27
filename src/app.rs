@@ -11,14 +11,13 @@ use std::sync::Arc;
 use crate::{
     HttpMethod, HttpRequest, Response,
     router::{Router, RouterError},
-    web::{
-        ArcMiddlewareClosure, ArcRequestClosure, FutureClosureBound,
-        http_request::Parsers,
-    },
+    web::{ArcMiddlewareClosure, ArcRequestClosure, FutureClosureBound, http_request::Parsers},
 };
 
+mod module;
 mod running;
 
+pub use module::Module;
 pub use running::Running;
 use smol::{
     lock::RwLock,
@@ -64,12 +63,12 @@ macro_rules! add_httpmethod {
             &self,
             route: &'static str,
             middleware: Vec<ArcMiddlewareClosure>,
-            req_fn: F,
+            request: F,
         ) -> ()
         where
             F: for<'a> FutureClosureBound<'a>,
         {
-            Self::add_route(self, $method, route, middleware, req_fn)
+            Self::add_route(self, $method, route, middleware, request)
                 .await
                 .expect("route already exist or was invalid!");
         }
@@ -115,7 +114,7 @@ where
     /// `method`: The http method that is required.
     /// `route`: The full route to access the endpoint.
     /// `middleware`: A collection of `ArcMiddlewareClosure`, can be empty if none.
-    /// `req_fn`: A closure that returns a future that falls under the `Fut` constraints.
+    /// `request`: A closure that returns a future that falls under the `Fut` constraints.
     ///
     /// ## Example
     /// ```rs
@@ -126,18 +125,42 @@ where
         method: HttpMethod,
         route: &'static str,
         middleware: Vec<ArcMiddlewareClosure>,
-        req_fn: F,
+        request: F,
     ) -> Result<(), RouterError>
     where
         F: for<'a> FutureClosureBound<'a>,
     {
-        let req_fn: ArcRequestClosure =
-            Arc::new(move |req: &mut HttpRequest, res: &mut Response| req_fn(req, res));
+        let request: ArcRequestClosure =
+            Arc::new(move |req: &mut HttpRequest, res: &mut Response| request(req, res));
         self.router
             .write()
             .await
-            .add_route(route, method, middleware, req_fn)
+            .add_route(route, method, middleware, request)
             .await
+    }
+
+    /// # Set 404
+    ///
+    /// Attempts to add the route to the router.
+    ///
+    /// ## Parameters
+    ///
+    /// `method`: The http method that is required.
+    /// `route`: The full route to access the endpoint.
+    /// `middleware`: A collection of `ArcMiddlewareClosure`, can be empty if none.
+    /// `req_fn`: A closure that returns a future that falls under the `Fut` constraints.
+    ///
+    /// ## Example
+    /// ```rs
+    ///
+    /// ```
+    pub async fn set_404<F>(&self, request: F)
+    where
+        F: for<'a> FutureClosureBound<'a>,
+    {
+        let request: ArcRequestClosure =
+            Arc::new(move |req: &mut HttpRequest, res: &mut Response| request(req, res));
+        self.router.write().await.set_404(request).await;
     }
 
     add_httpmethod!(get, HttpMethod::GET);
@@ -145,6 +168,21 @@ where
     add_httpmethod!(patch, HttpMethod::PATCH);
     add_httpmethod!(put, HttpMethod::PUT);
     add_httpmethod!(delete, HttpMethod::DELETE);
+
+    /// # Module
+    ///
+    /// Create a new module that can be used to create routes with base paths.
+    ///
+    /// For example:
+    ///
+    /// ```rust
+    /// let api_module = app.module("/api");
+    ///
+    /// api_module.get("/test", middleware!(), |req, res| Box::pin(async move{ Ok(()) })).await;
+    /// ```
+    pub fn module(&self, base_rte: impl Into<String>) -> Module<'_, 'app> {
+        Module::create(base_rte, self)
+    }
 
     /// Set the parser to use for parsing incoming HTTP Request.
     pub fn set_parser(&mut self, selected: Parsers) -> () {

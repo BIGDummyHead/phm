@@ -45,17 +45,14 @@ pub enum VariableError {
 /// preserved.
 impl From<VariableError> for RequestError {
     fn from(value: VariableError) -> Self {
-        let mut req_e = RequestError::default();
 
         let code = match &value {
             VariableError::Missing => 404,
             VariableError::CannotConvert(_, _) => 500,
         };
-
-        req_e.set_message(value.to_string());
-        req_e.set_status(code);
-
-        req_e
+        RequestError::new(move |res| {
+            res.status(code).text(value.to_string());
+        })
     }
 }
 

@@ -28,6 +28,7 @@ use crate::{
 /// Builder for the outgoing HTTP response. Holds the status code, an
 /// ordered header map, an optional body, and the parser that will be used
 /// to serialise the final byte payload.
+#[derive(Debug)]
 pub struct Response {
     headers: LinkedHashMap<HeaderKey, HeaderValue>,
     status: HttpCode,
@@ -175,10 +176,9 @@ impl Response {
 #[cfg(feature = "json")]
 impl From<serde_json::Error> for RequestError {
     fn from(value: serde_json::Error) -> Self {
-        let mut req_e = RequestError::default();
-        req_e.set_message(value.to_string());
-        req_e.set_status(HttpCode::InternalServerError);
-        req_e
+        RequestError::new(move |res| {
+            res.text(value.to_string()).status(HttpCode::InternalServerError);
+        })
     }
 }
 
@@ -192,9 +192,9 @@ impl From<std::io::Error> for RequestError {
             _ => HttpCode::InternalServerError,
         };
 
-        let mut req_e = RequestError::default();
-        req_e.set_status(code);
-        req_e
+        RequestError::new(move |res| {
+            res.status(code).text(value.to_string());
+        })
     }
 }
 

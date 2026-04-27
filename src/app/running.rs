@@ -85,8 +85,13 @@ impl<'app> App<'app, Running> {
                             tcp_acception = listener_ref.accept().fuse() => {
                                 tcp_acception
                             },
-                            _ = poison_receiver.recv().fuse() => {
-                                break;
+                            recv = poison_receiver.recv().fuse() => {
+                                if let Ok(v) = recv && v {
+                                    break;
+                                }
+                                else {
+                                    continue;
+                                }
                             }
                         };
 
@@ -179,11 +184,7 @@ async fn handle_connection<'app>(
                     let result = (*func)(&mut req, &mut res).await;
 
                     if let Err(e) = result {
-                        res.status(*e.status());
-
-                        if let Some(m) = e.message() {
-                            res.text(m);
-                        }
+                        e.handle(&mut res);
                     }
                 }
             }

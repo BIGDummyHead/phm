@@ -17,6 +17,7 @@ use smol::lock::RwLock;
 
 use crate::{
     HttpMethod,
+    router::node::MethodToNode,
     web::{ArcMiddlewareClosure, ArcRequestClosure},
 };
 
@@ -29,7 +30,9 @@ pub struct Router<'app>
 where
     'app: 'static,
 {
-    head: Arc<RwLock<Node<'app>>>,
+    root: Arc<RwLock<Node<'app>>>,
+    root_method: RwLock<MethodToNode<'app>>,
+    missing_404: Arc<RwLock<Node<'app>>>,
 }
 
 unsafe impl<'app> Send for Router<'app> {}
@@ -39,8 +42,18 @@ impl<'app> Router<'app> {
     /// Creates a new router whose head node holds no routes.
     pub fn new() -> Self {
         Self {
-            head: Arc::new(RwLock::new(Node::new_head())),
+            root: Arc::new(RwLock::new(Node::new_head())),
+            missing_404: Arc::new(RwLock::new(Node::new_head())),
+            root_method: RwLock::new(MethodToNode::new()),
         }
+    }
+
+    /// # Set 404
+    /// 
+    /// Sets the request closure when a 404 request is received.
+    pub async fn set_404(&self, request: ArcRequestClosure) -> () {
+        let mut write_guard = self.missing_404.write().await;
+        write_guard.set_request_fn(Some(request));
     }
 
     /// # Add Route
@@ -58,7 +71,28 @@ impl<'app> Router<'app> {
         middleware: Vec<ArcMiddlewareClosure>,
         request_closure: ArcRequestClosure,
     ) -> Result<(), RouterError> {
-        let mut current_node = self.head.clone();
+        let mut current_node = self.root.clone();
+
+        if full_route == "/" {
+            let mut root_write = self.root_method.write().await;
+
+            if let Some(_) = root_write.get(&method) {
+                return Err(RouterError::AlreadyExist);
+            }
+
+            // set the data for this resolution
+            let mut node = Node::new_head();
+            node.set_request_fn(Some(request_closure));
+
+            //add the middleware
+            let head_middleware = node.middleware_mut();
+            head_middleware.extend(middleware);
+
+            //finally insert this node with the method
+            root_write.insert(method, Arc::new(RwLock::new(node)));
+
+            return Ok(());
+        }
 
         let mut peek_route = full_route.split('/').peekable();
         while let Some(route_part) = peek_route.next() {
@@ -119,7 +153,26 @@ impl<'app> Router<'app> {
         method: HttpMethod,
         variables: &mut HashMap<String, String>,
     ) -> Result<Arc<RwLock<Node<'app>>>, RouterError> {
-        let mut current_node = self.head.clone();
+        if full_route == "/" {
+            //try to find the root method, clone the node, and transform the option to result
+            let read_guard = self.root_method.read().await;
+            let head_method = read_guard
+                .get(&method)
+                .map(|n| n.clone())
+                .ok_or(RouterError::NotFound);
+
+            //check for a missing 404 route
+            if let Err(e) = head_method {
+                return match &self.missing_404.read().await.request_fn() {
+                    Some(_) => Ok(self.missing_404.clone()),
+                    None => Err(e),
+                };
+            }
+
+            return head_method;
+        }
+
+        let mut current_node = self.root.clone();
 
         let mut route_parts = full_route.split('/');
         while let Some(route_part) = route_parts.next() {
@@ -133,7 +186,10 @@ impl<'app> Router<'app> {
             }
 
             let child_node = match node.get_child(route_part, &method).await {
-                None => Err(RouterError::NotFound),
+                None => match &self.missing_404.read().await.request_fn() {
+                    None => Err(RouterError::NotFound),
+                    Some(_) => Ok(self.missing_404.clone()),
+                },
                 Some(c) => Ok(c.clone()),
             }?;
 
