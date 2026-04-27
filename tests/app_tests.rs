@@ -1,4 +1,23 @@
-use phm::{App, GET, Middleware, middleware, request};
+use std::pin::Pin;
+
+use phm::{App, HttpRequest, RequestError, Response, middleware, request};
+
+async fn some_request(req: &mut HttpRequest<'_>, res: &mut Response) -> Result<(), RequestError> {
+    res.status(200).text("some text");
+    Ok(())
+}
+
+
+// what the user's request will get transformed into
+fn transformed_request<'a, 'b>(
+    req: &'a mut HttpRequest<'b>,
+    res: &'a mut Response,
+) -> Pin<Box<dyn Future<Output = Result<(), RequestError>> + Send + 'a>> {
+    Box::pin(async move {
+        res.status(200).text("some text");
+        Ok(())
+    })
+}
 
 #[test]
 fn start_test() {
