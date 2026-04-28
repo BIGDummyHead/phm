@@ -1,32 +1,21 @@
+mod postman;
 mod request_args;
-mod route_document;
 
 use core::panic;
-
-use darling::FromMeta;
+use darling::{FromMeta, util::parse_attribute_to_meta_list};
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{FnArg, ItemFn, parse_macro_input, punctuated::Punctuated, token::Comma};
+use syn::{
+    Attribute, FnArg, ItemFn, Meta, parse::Parse, parse_macro_input, punctuated::Punctuated,
+    token::Comma,
+};
 
 use crate::request_args::RequestArgs;
+use postman::*;
 
-fn ensure_correct_args(inputs: &Punctuated<FnArg, Comma>) -> () {
-    for arg in inputs {
-        match arg {
-            syn::FnArg::Receiver(_) => panic!("unexpected self argument"),
-            syn::FnArg::Typed(pat_type) => {
-                let type_name = pat_type.to_token_stream().to_string().to_lowercase();
-
-                if type_name.contains("httprequest") || type_name.contains("response") {
-                    continue;
-                } else {
-                    panic!("incorrect parameter");
-                }
-            }
-        }
-    }
-}
-
+/// # Get fn Input Names
+///
+/// Returns a `Vec` of TokenStreams of each argument name inside of an `&ItemFn`.
 fn get_fn_input_names(input: &ItemFn) -> Vec<proc_macro2::TokenStream> {
     input
         .sig
@@ -70,6 +59,23 @@ fn dry_request(input: ItemFn) -> TokenStream {
     }.into()
 }
 
+fn ensure_correct_args(inputs: &Punctuated<FnArg, Comma>) -> () {
+    for arg in inputs {
+        match arg {
+            syn::FnArg::Receiver(_) => panic!("unexpected self argument"),
+            syn::FnArg::Typed(pat_type) => {
+                let type_name = pat_type.to_token_stream().to_string().to_lowercase();
+
+                if type_name.contains("httprequest") || type_name.contains("response") {
+                    continue;
+                } else {
+                    panic!("incorrect parameter");
+                }
+            }
+        }
+    }
+}
+
 /// # request
 ///
 /// Proc Macro Attribute used over functions that transform a request into a simplier API.
@@ -82,7 +88,7 @@ fn dry_request(input: ItemFn) -> TokenStream {
 ///     # use phm::{App, HttpMethod::GET, app::{ClosedAppExt}, HttpRequest, Response, RequestError, Middleware};
 ///     # use phm_pm::request;
 ///     # use phm::web::{ArcMiddlewareClosure, middleware};
-/// 
+///
 ///     fn auth() -> ArcMiddlewareClosure {
 ///         middleware(|req, res| {
 ///             Box::pin(async move {
@@ -96,7 +102,7 @@ fn dry_request(input: ItemFn) -> TokenStream {
 ///         res.status(200).text("user information");
 ///         Ok(())
 ///     }
-/// 
+///
 ///     // we can also expand upon this to define the route specific information
 ///     #[request(route="/api/user", method="POST", middleware(auth))]
 ///     async fn post_user(req: &mut HttpRequest<'_>, res: Response) -> Result<(), RequestError> {
@@ -181,4 +187,57 @@ pub fn request(args: TokenStream, func_stream: TokenStream) -> TokenStream {
                 }))
         }
     }.into()
+}
+
+fn join_strings(strings: Vec<String>) -> String {
+    let mut buffer = String::new();
+
+    for s in strings {
+        buffer.push_str(&s);
+        buffer.push_str("\r\n");
+    }
+
+    buffer
+}
+
+#[proc_macro_attribute]
+pub fn api_doc(_args: TokenStream, func: TokenStream) -> TokenStream {
+    let func = parse_macro_input!(func as ItemFn);
+
+    let request_attr = match func
+        .attrs
+        .iter()
+        .find(|a| a.path().to_token_stream().to_string() == "request")
+    {
+        None => panic!("no request attribute included for documentation"),
+        Some(v) => v,
+    };
+
+    let documentation: String = join_strings(
+        func.attrs
+            .iter()
+            .filter(|a| a.path().to_token_stream().to_string() == "doc")
+            .map(|a| String::from_meta(&a.meta).expect("invalid doc"))
+            .collect(),
+    );
+
+    let request_args = RequestArgs::from_meta(&request_attr.meta).expect("failed to parse meta");
+
+    let middleware_fn_names = request_args.middleware.to_strings();
+
+    let middleware = if middleware_fn_names.len() == 0 {
+        None
+    } else {
+        Some(middleware_fn_names)
+    };
+
+    //    let route_doc = ApiSchema::new(request_args.route, request_args.method, documentation, middleware);
+
+    //  let write_meta_data = serde_json::to_string(&route_doc).expect("could not parse route documentation");
+
+    let item = postman::Item::new(func.sig.ident.to_string(), request_args.method, Some(documentation));
+
+    let _ = add_to_schema(item);
+
+    func.to_token_stream().into()
 }

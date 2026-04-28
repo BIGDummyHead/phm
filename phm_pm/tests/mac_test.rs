@@ -3,12 +3,22 @@ mod tests {
     use phm::{
         App, Middleware, app::ClosedAppExt, middleware, web::ArcMiddlewareClosure,
     };
-    use phm_pm::request;
+    use phm_pm::{api_doc, request};
 
     fn auth() -> ArcMiddlewareClosure {
         middleware(|_req, _res| Box::pin(async move { Middleware::Next }))
     }
 
+    /// # Hello world
+    /// 
+    /// This is a doc
+    /// 
+    /// This my doc
+    /// 
+    /// There is no doc like
+    /// 
+    /// Without my doc I am nothing, my doc is nothing without me.
+    #[api_doc]
     #[request(route = "/test", method = "GET", middleware(auth))]
     async fn test(_req: &mut HttpRequest<'_>, _res: Response) -> Result<(), RequestError> {
         Ok(())
