@@ -2,13 +2,10 @@ mod postman;
 mod request_args;
 
 use core::panic;
-use darling::{FromMeta, util::parse_attribute_to_meta_list};
+use darling::FromMeta;
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
-use syn::{
-    Attribute, FnArg, ItemFn, Meta, parse::Parse, parse_macro_input, punctuated::Punctuated,
-    token::Comma,
-};
+use syn::{FnArg, Ident, ItemFn, parse_macro_input, punctuated::Punctuated, token::Comma};
 
 use crate::request_args::RequestArgs;
 use postman::*;
@@ -200,15 +197,56 @@ fn join_strings(strings: Vec<String>) -> String {
     buffer
 }
 
+/// # Postman
+///
+/// This macro allows you to document your API programatically by adding this with the `phm_pm::request` macro attribute.
+///
+/// At compile time a file is created called `postman/postman_api.json`. The file can then be imported into postman, which creates a collection with all collected routes.
+///
+/// ## Example
+///
+/// ```
+///     # use phm::{App, HttpMethod::GET, app::{ClosedAppExt}, HttpRequest, Response, RequestError, Middleware};
+///     # use phm_pm::{postman, request};
+///     # use phm::web::{ArcMiddlewareClosure, middleware};
+///
+///     /// # post_user
+///     ///Allows you to create a user!
+///  #[postman]
+///  #[request(route="/api/user", method="POST")]
+///  async fn post_user(req: &mut HttpRequest<'_>, res: Response) -> Result<(), RequestError> {
+///      res.status(201).text("created");
+///      Ok(())
+///  }
+///
+///     # fn main () {
+///         # smol::block_on(async move {
+///             # let app = App::bind("127.0.0.1:80").await.expect("failed to bind server");
+///             # app.add_def(post_user).await.expect("");
+///         # });
+///     # }
+///
+///
+/// ```
+///
+/// The follow postman schema is created:
+///
+/// ```json
+/// ```
 #[proc_macro_attribute]
-pub fn api_doc(_args: TokenStream, func: TokenStream) -> TokenStream {
+pub fn postman(_args: TokenStream, func: TokenStream) -> TokenStream {
     let func = parse_macro_input!(func as ItemFn);
 
-    let request_attr = match func
-        .attrs
-        .iter()
-        .find(|a| a.path().to_token_stream().to_string() == "request")
-    {
+    let request_attr = match func.attrs.iter().find(|a| {
+        a.path()
+            .segments
+            .last()
+            .expect("failed to get ending segment")
+            .to_token_stream()
+            .to_string()
+            .trim()
+            == "request"
+    }) {
         None => panic!("no request attribute included for documentation"),
         Some(v) => v,
     };
@@ -223,21 +261,23 @@ pub fn api_doc(_args: TokenStream, func: TokenStream) -> TokenStream {
 
     let request_args = RequestArgs::from_meta(&request_attr.meta).expect("failed to parse meta");
 
-    let middleware_fn_names = request_args.middleware.to_strings();
+    let item = postman::Item::new(
+        func.sig.ident.to_string(),
+        request_args.route,
+        request_args.method,
+        Some(documentation),
+    );
 
-    let middleware = if middleware_fn_names.len() == 0 {
-        None
-    } else {
-        Some(middleware_fn_names)
-    };
-
-    //    let route_doc = ApiSchema::new(request_args.route, request_args.method, documentation, middleware);
-
-    //  let write_meta_data = serde_json::to_string(&route_doc).expect("could not parse route documentation");
-
-    let item = postman::Item::new(func.sig.ident.to_string(), request_args.method, Some(documentation));
-
-    let _ = add_to_schema(item);
+    add_to_schema(item);
 
     func.to_token_stream().into()
+}
+
+#[proc_macro]
+pub fn postman_info(input: TokenStream) -> TokenStream {
+    let info = parse_macro_input!(input as Info);
+
+    set_global_info(info);
+
+    TokenStream::new()
 }

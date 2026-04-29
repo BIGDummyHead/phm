@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::Request;
+use crate::{Request, Url, base_url};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Item {
@@ -18,10 +18,10 @@ impl Item {
     /// `name`: The name of the item in collection of items
     /// `method`: The method that is used to access the resource
     /// `description`: An optional description that tells you what the request does.
-    pub fn new(name: String, method: String, description: Option<String>) -> Self {
+    pub fn new(name: String, path: String, method: String, description: Option<String>) -> Self {
         Self {
-            name,
-            request: Request::new(method, description),
+            name: name.clone(),
+            request: Request::new(name, path, method, description),
         }
     }
 }
