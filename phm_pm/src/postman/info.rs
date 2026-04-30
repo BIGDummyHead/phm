@@ -1,5 +1,5 @@
 use serde::Serialize;
-use syn::{Ident, LitStr, Token, parse::Parse};
+use syn::{LitStr, Token, parse::Parse};
 
 /// Metadata information for the api collection.
 #[derive(Debug, Clone, Serialize)]
@@ -39,8 +39,7 @@ impl Parse for Info {
             let schema = input.parse::<LitStr>()?;
 
             Info::with_schema(name.value(), schema.value())
-        }
-        else {
+        } else {
             Info::new(name.value())
         };
 

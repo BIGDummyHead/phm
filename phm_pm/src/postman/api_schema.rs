@@ -18,6 +18,13 @@ impl ApiSchema {
         }
     }
 
+    pub fn take_module(&mut self, name: &str) -> Option<Item> {
+        let position = self.item.iter().position(|m| {
+            m.is_folder() && m.name.to_lowercase() == name.to_lowercase()
+        })?;
+
+        Some(self.item.remove(position))
+    }
     pub fn add_item(&mut self, item: Item) -> () {
         if let Some(existing_index) = self.item.iter().position(|i| {
             i.name.to_lowercase() == item.name.to_lowercase()
