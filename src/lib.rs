@@ -25,7 +25,11 @@ mod manager;
 
 pub use app::App;
 
+pub use router::{Router, RouterError, Node};
+
 pub use web::{
     HttpMethod, HttpMethod::DELETE, HttpMethod::GET, HttpMethod::PATCH, HttpMethod::POST,
     HttpRequest, Middleware, RequestError, Response, middleware,
 };
+
+
