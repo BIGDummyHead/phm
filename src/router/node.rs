@@ -72,35 +72,45 @@ impl<'app> Node<'app> {
             return Err(RouterError::BadName);
         }
 
-        let node = Node {
-            children: HashMap::new(),
-            route_part,
-            middleware,
-            request_closure,
-        };
+        if let Some(child_map) = self.children.get_mut(route_part) {
+            if let Some(existing) = child_map.get(&method) {
+                let mut existing_w = existing.write().await;
 
-        let child_node = self.children.get_mut(route_part);
-
-        match child_node {
-            Some(child_map) => {
-                if let Some(v) = child_map.get(&method) {
-                    let node_read = v.read().await;
-
-                    // do not overwrite if there is already a request fn on there!
-                    if let Some(_) = node_read.request_fn() {
-                        return Err(RouterError::AlreadyExist);
-                    }
+                if existing_w.request_fn().is_some() && request_closure.is_some() {
+                    return Err(RouterError::AlreadyExist);
                 }
 
-                child_map.insert(method, Arc::new(RwLock::new(node)));
-            }
-            None => {
-                let mut child_map = HashMap::new();
-                child_map.insert(method, Arc::new(RwLock::new(node)));
+                if request_closure.is_some() {
+                    existing_w.set_request_fn(request_closure);
+                    existing_w.middleware_mut().extend(middleware);
+                }
 
-                self.children.insert(route_part, child_map);
+                return Ok(());
             }
-        };
+
+            child_map.insert(
+                method,
+                Arc::new(RwLock::new(Node {
+                    children: HashMap::new(),
+                    route_part,
+                    middleware,
+                    request_closure,
+                })),
+            );
+        } else {
+            let mut child_map = HashMap::new();
+            child_map.insert(
+                method,
+                Arc::new(RwLock::new(Node {
+                    children: HashMap::new(),
+                    route_part,
+                    middleware,
+                    request_closure,
+                })),
+            );
+
+            self.children.insert(route_part, child_map);
+        }
 
         Ok(())
     }
