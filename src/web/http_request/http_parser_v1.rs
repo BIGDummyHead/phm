@@ -81,7 +81,7 @@ async fn create_header_map(
         // ! insert case insensitive, very important
         map.insert(
             header_name.trim().to_lowercase(),
-            header_value.trim().to_lowercase(),
+            header_value.to_string(),
         );
     }
 
