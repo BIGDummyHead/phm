@@ -17,7 +17,5 @@ fn start_test() {
         .await;
 
         app.start();
-
-        loop {}
     });
 }
