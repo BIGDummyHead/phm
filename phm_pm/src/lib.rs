@@ -10,6 +10,7 @@ use syn::{Attribute, FnArg, ItemFn, parse_macro_input, punctuated::Punctuated, t
 use crate::request_args::RequestArgs;
 use postman::*;
 
+
 /// # Get fn Input Names
 ///
 /// Returns a `Vec` of TokenStreams of each argument name inside of an `&ItemFn`.
@@ -171,16 +172,19 @@ pub fn route(args: TokenStream, func_stream: TokenStream) -> TokenStream {
 
     let middleware: Vec<_> = request_meta.middleware.iter().collect();
 
+
     quote! {
         fn #fn_name()
          -> phm::app::RouteDefinition {
 
             use phm::middleware;
 
-                let middleware_clones = vec![#(#middleware()), *];
-                phm::app::RouteDefinition::new(#route, #method.to_string(), middleware_clones, std::boxed::Box::new(|#req_name: &mut phm::HttpRequest<'_>, #res_name: &mut phm::Response| {
-                    std::boxed::Box::pin(async move #body)
-                }))
+            let middleware_clones = vec![#(#middleware()), *];
+            let route_def = phm::app::RouteDefinition::new(#route, #method.to_string(), middleware_clones, std::boxed::Box::new(|#req_name: &mut phm::HttpRequest<'_>, #res_name: &mut phm::Response| {
+                std::boxed::Box::pin(async move #body)
+            })); 
+
+            route_def
         }
     }.into()
 }

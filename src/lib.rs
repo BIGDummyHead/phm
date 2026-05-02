@@ -26,6 +26,6 @@ mod manager;
 pub use app::App;
 
 pub use web::{
-    HttpMethod, HttpMethod::DELETE, HttpMethod::GET, HttpMethod::PATCH, HttpMethod::POST, HttpRequest,
-    RequestError, Response, middleware, Middleware
+    HttpMethod, HttpMethod::DELETE, HttpMethod::GET, HttpMethod::PATCH, HttpMethod::POST,
+    HttpRequest, Middleware, RequestError, Response, middleware,
 };

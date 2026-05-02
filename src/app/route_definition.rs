@@ -1,6 +1,7 @@
-use std::pin::Pin;
+use std::{fmt::Debug, pin::Pin};
 
 use async_trait::async_trait;
+use futures::future::join_all;
 
 use crate::{
     App, HttpMethod, HttpRequest, RequestError, Response, app::Closed, router::RouterError,
@@ -24,6 +25,15 @@ pub struct RouteDefinition {
     method: HttpMethod,
     middleware: Vec<ArcMiddlewareClosure>,
     req_fn: RequestClosure,
+}
+
+impl Debug for RouteDefinition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RouteDefinition")
+            .field("route", &self.route)
+            .field("method", &self.method)
+            .finish()
+    }
 }
 
 impl RouteDefinition {
@@ -63,11 +73,28 @@ impl RouteDefinition {
 #[async_trait]
 pub trait ClosedAppExt {
     async fn add_def(&self, cls: impl Fn() -> RouteDefinition + Send) -> Result<(), RouterError>;
+
+    async fn add_defs(
+        &self,
+        iter: impl Iterator<Item = impl Fn() -> RouteDefinition + Send> + Send,
+    );
 }
 
 #[async_trait]
 impl<'app> ClosedAppExt for App<'app, Closed> {
     async fn add_def(&self, cls: impl Fn() -> RouteDefinition + Send) -> Result<(), RouterError> {
         cls().add(self).await
+    }
+
+    async fn add_defs(
+        &self,
+        iter: impl Iterator<Item = impl Fn() -> RouteDefinition + Send> + Send,
+    ) {
+        let mut futs = vec![];
+        for def in iter {
+            futs.push(def().add(self));
+        }
+
+        join_all(futs).await;
     }
 }

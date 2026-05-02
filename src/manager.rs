@@ -6,8 +6,6 @@
 //! channel, so that the producer loop on the accept thread can hand off
 //! work without blocking.
 
-mod worker;
-
 use std::marker::PhantomData;
 
 use smol::{
