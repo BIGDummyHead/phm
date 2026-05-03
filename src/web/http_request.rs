@@ -41,6 +41,42 @@ pub struct HttpRequest<'app> {
     node: Arc<RwLock<Node<'app>>>,
 }
 
+pub trait CookieExt {
+    /// Get Cookie
+    ///
+    /// Attempts to retrieve the header "cookie" from the headers map.
+    ///
+    /// If the header exist then a `Some` with a map of key and values of cookies is given back.
+    ///
+    /// If the header does not exist `None` is returned.
+    fn get_cookie<'a, 'b>(&'a self) -> Option<HashMap<&'a str, &'b str>>
+    where
+        'a: 'b;
+}
+
+impl CookieExt for HashMap<String, String> {
+    fn get_cookie<'a, 'b>(&'a self) -> Option<HashMap<&'a str, &'b str>>
+    where
+        'a: 'b,
+    {
+        let Some(cookies) = self.get("cookie") else {
+            return None;
+        };
+
+        let mut map = HashMap::new();
+
+        for cookie in cookies.split(';') {
+            let Some((key, value)) = cookie.split_once('=') else {
+                break;
+            };
+
+            map.insert(key, value);
+        }
+
+        Some(map)
+    }
+}
+
 unsafe impl<'app> Send for HttpRequest<'app> {}
 unsafe impl<'app> Sync for HttpRequest<'app> {}
 

@@ -4,6 +4,7 @@
 //! codes, HTTP methods, middleware machinery, and the trait bounds /
 //! type-aliases that make async closures usable as handlers.
 
+pub mod file_body;
 mod http_method;
 pub mod http_request;
 mod middleware;
@@ -34,7 +35,7 @@ pub type ArcRequestClosure = Arc<
 >;
 
 /// Used for the app routing
-///  
+///
 /// Ensures that the passed in dyn fn (closure) has the parameters (req, res) and return a boxed future that is Send and lives for at least as long as the variables itself.
 pub trait FutureClosureBound<'a>:
     Fn(
