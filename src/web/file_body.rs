@@ -91,13 +91,14 @@ async fn read_file(
     let file_name = disposition
         .split_once(':')
         .map(|(_, data)| {
-            let Some(filename) = data.split(';').find(|md| md.starts_with("filename")) else {
-                return None;
-            };
+            let filename = data
+                .split(';')
+                .map(str::trim)
+                .find(|md| md.starts_with("filename"))?;
 
             filename
                 .split_once('=')
-                .map(|(_, name)| name.replace('"', ""))
+                .map(|(_, name)| name.trim().replace('"', ""))
         })
         .flatten()
         .ok_or(FileReadError::FileNameMissing)?;
