@@ -196,7 +196,7 @@ async fn handle_connection<'app>(
     let mut stream_write_guard = stream.write().await;
 
     let write: Arc<[u8]> = response.into();
-    stream_write_guard.write(&write).await?;
+    stream_write_guard.write_all(&write).await?;
     stream_write_guard.flush().await?;
 
     Ok(())
