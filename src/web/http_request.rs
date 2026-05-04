@@ -70,7 +70,7 @@ impl CookieExt for HashMap<String, String> {
                 break;
             };
 
-            map.insert(key, value);
+            map.insert(key.trim(), value.trim());
         }
 
         Some(map)

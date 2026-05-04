@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use smol::io::{AsyncBufReadExt, AsyncReadExt, BufReader, Cursor};
+use thiserror::Error;
 
 use crate::web::http_request::HttpRequestMeta;
 
@@ -8,6 +9,16 @@ pub struct FileBody {
     file_name: String,
     content_type: String,
     data: Arc<[u8]>,
+}
+
+impl Debug for FileBody {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileBody")
+            .field("file_name", &self.file_name)
+            .field("content_type", &self.content_type)
+            .field("data", &self.data.len())
+            .finish()
+    }
 }
 
 impl FileBody {
@@ -27,10 +38,15 @@ impl FileBody {
     }
 }
 
+#[derive(Debug, Error)]
 pub enum FileReadError {
+    #[error("Boundary does not match indicated boundary key")]
     BoundaryNoMatch,
+    #[error("file name was missing!")]
     FileNameMissing,
+    #[error("std::io read issue")]
     ReadError(std::io::Error),
+    #[error("content type is missing from read")]
     ContentTypeMissing,
 }
 
@@ -155,14 +171,16 @@ impl FileMetaExtension for HttpRequestMeta {
 
         let mut buf_reader = BufReader::new(cursor);
 
-        while let Ok(possible_file) = read_file(boundary_key, &mut buf_reader).await {
-            let Some(file) = possible_file else {
-                break;
-            };
-
-            files.push(file);
+        loop {
+            match read_file(boundary_key, &mut buf_reader).await {
+                Ok(Some(file)) => files.push(file),
+                Ok(None) => break,
+                Err(_) => {
+                    //dbg!(e);
+                    break;
+                }
+            }
         }
-
         files
     }
 }
