@@ -81,7 +81,7 @@ async fn read_file(
     reader.read_line(&mut reader_boundary).await?;
 
     // boundary does not match
-    if reader_boundary != boundary {
+    if reader_boundary != format!("--{boundary}\r\n") {
         return Err(FileReadError::BoundaryNoMatch);
     }
 
@@ -113,7 +113,7 @@ async fn read_file(
     let mut empty_line = String::new();
     reader.read_line(&mut empty_line).await?;
 
-    let file_data = read_until_next_boundary(reader, format!("--{boundary}").as_bytes()).await?;
+    let file_data = read_until_next_boundary(reader, boundary.as_bytes()).await?;
 
     Ok(Some(FileBody {
         file_name,
