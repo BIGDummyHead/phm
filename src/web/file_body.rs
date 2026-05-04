@@ -135,7 +135,7 @@ impl FileMetaExtension for HttpRequestMeta {
                     return None;
                 };
 
-                if data_type == "multipart/form-data" {
+                if data_type != "multipart/form-data" {
                     return None;
                 }
 
