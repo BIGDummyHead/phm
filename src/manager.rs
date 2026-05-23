@@ -6,12 +6,9 @@
 //! channel, so that the producer loop on the accept thread can hand off
 //! work without blocking.
 
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
-use smol::{
-    LocalExecutor,
-    channel::{self, SendError, Sender},
-};
+use smol::channel::{self, SendError, Sender};
 
 /// # Manager
 ///
@@ -50,16 +47,16 @@ where
         let (sx, rx) = channel::bounded::<Fut>(1000);
 
         // for the thread count, spawn a scoped thread
+        let ex = Arc::new(smol::Executor::new());
         for _ in 0..thread_cnt {
+            let ex = ex.clone();
             let rx = rx.clone();
             scope.spawn(move || {
                 // create a new local executor for each thread
-                let lex = LocalExecutor::new();
-
                 //make this thread async by using a block on
-                smol::block_on(lex.run(async {
+                smol::block_on(ex.run(async {
                     while let Ok(data) = rx.recv().await {
-                        lex.spawn(async move {
+                        ex.spawn(async move {
                             data.await;
                         })
                         .detach();
