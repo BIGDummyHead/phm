@@ -44,7 +44,7 @@ where
         'env: 'scope,
         Fut: 'env,
     {
-        let (sx, rx) = channel::bounded::<Fut>(1000);
+        let (sx, rx) = channel::unbounded::<Fut>();
 
         // for the thread count, spawn a scoped thread
         let ex = Arc::new(smol::Executor::new());
